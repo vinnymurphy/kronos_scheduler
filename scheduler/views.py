@@ -8,7 +8,7 @@ from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
 
 from .forms import ScheduleUploadForm
-from .models import Shift, ShiftEntry
+from .models import ShiftEntry
 from .services import import_schedule_json
 
 
@@ -45,13 +45,6 @@ def schedule_upload_view(request):
         form = ScheduleUploadForm()
 
     return render(request, "scheduler/upload.html", {"form": form})
-
-
-@login_required
-def schedule_list_view(request):
-    # Retrieve only the currently active shifts for you
-    active_shifts = Shift.objects.filter(is_active=True).prefetch_related("segments")
-    return render(request, "scheduler/schedule_list.html", {"shifts": active_shifts})
 
 
 def kronos_parser_view(request):
@@ -107,4 +100,21 @@ def save_shifts_api(request):
 
     return JsonResponse(
         {"status": "error", "message": "Invalid request method."}, status=405
+    )
+
+
+@login_required
+def schedule_list_view(request):
+    shifts = ShiftEntry.objects.filter(user=request.user).order_by("month", "day_num")
+    # Extract distinct months for the filter dropdown
+    unique_months = (
+        ShiftEntry.objects.filter(user=request.user)
+        .values_list("month", flat=True)
+        .distinct()
+    )
+
+    return render(
+        request,
+        "scheduler/schedule_list.html",
+        {"shifts": shifts, "unique_months": unique_months},
     )
