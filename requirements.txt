@@ -1,0 +1,11 @@
+black
+Django
+django-debug-toolbar
+django-widget-tweaks
+djlint
+factory_boy
+ipython
+isort
+ruff
+sourcery-cli
+weasyprint
