@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Your Active Schedule</h2>
+            <a href="{% url 'schedule_upload' %}" class="btn btn-primary">Upload / Paste New Schedule</a>
+        </div>
+        {% if shifts %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date</th>
+                            <th>Day</th>
+                            <th>Shift Breakdown (Work & Breaks)</th>
+                            <th>Total Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for shift in shifts %}
+                            <tr>
+                                <td>{{ shift.date|date:"F j, Y" }}</td>
+                                <td><strong>{{ shift.day_of_week }}</strong></td>
+                                <td>
+                                    <ul class="list-unstyled mb-0">
+                                        {% for segment in shift.segments.all %}
+                                            <li>
+                                                {% if segment.segment_type == "work" %}
+                                                    <span class="badge bg-success">Work</span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">Break</span>
+                                                {% endif %}
+                                                {{ segment.start_time|time:"g:i A" }} - {{ segment.end_time|time:"g:i A" }}
+                                                <small class="text-muted">({{ segment.hours }} hrs)</small>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                                <td><strong>{{ shift.total_hours }} hrs</strong></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info" role="load">
+                No active shifts found. Click the button above to import your Kronos schedule!
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}

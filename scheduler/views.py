@@ -48,3 +48,6 @@ def schedule_list_view(request):
     # Retrieve only the currently active shifts for you
     active_shifts = Shift.objects.filter(is_active=True).prefetch_related("segments")
     return render(request, "scheduler/schedule_list.html", {"shifts": active_shifts})
+
+def kronos_parser_view(request):
+    return render(request, "scheduler/kronos_parser.html")

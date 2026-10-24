@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Kronos Scheduler</title>
+</head>
+<body>
+    <div style="max-width: 400px; margin: 50px auto; font-family: sans-serif;">
+        <h2>Log In to Kronos Scheduler</h2>
+
+        {% if form.errors %}
+            <p style="color: red;">Your username and password didn't match. Please try again.</p>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" style="padding: 10px 20px;">Log In</button>
+        </form>
+    </div>
+</body>
+</html>
