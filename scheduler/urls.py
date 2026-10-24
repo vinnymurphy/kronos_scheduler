@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import schedule_list_view, schedule_upload_view, kronos_parser_view
+from .views import kronos_parser_view, schedule_list_view, schedule_upload_view
 
 urlpatterns = [
     path("", schedule_list_view, name="schedule_list"),

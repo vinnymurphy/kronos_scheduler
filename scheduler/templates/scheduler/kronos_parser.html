@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kronos Schedule Parser & Manager</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Kronos Schedule Parser & Manager</title>
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <!-- FontAwesome Icons -->
+        <link rel="stylesheet"
+              href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <!-- Google Fonts Inter -->
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+              rel="stylesheet">
+        <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -30,8 +32,8 @@
                 }
             }
         }
-    </script>
-    <style>
+        </script>
+        <style>
         body { font-family: 'Inter', sans-serif; }
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
@@ -44,300 +46,334 @@
             background: #cbd5e1;
             border-radius: 4px;
         }
-    </style>
-</head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
-
-    <!-- Navigation Header -->
-    <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <div class="bg-brand-600 p-2 rounded-lg text-white">
-                    <i class="fa-solid fa-calendar-check text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-lg leading-none">Kronos Shift Manager</h1>
-                    <span class="text-xs text-slate-400">Parse, Review & Update Work Schedules</span>
-                </div>
-            </div>
-            <div class="flex items-center space-x-3">
-                <button id="btn-parse-trigger" onclick="scrollToParser()" class="text-xs sm:text-sm bg-brand-600 hover:bg-brand-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm">
-                    <i class="fa-solid fa-code"></i> Raw Input
-                </button>
-                <button onclick="exportData('json')" class="text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-file-code"></i> JSON
-                </button>
-                <button onclick="exportData('csv')" class="text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-file-csv"></i> CSV
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Container -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-
-        <!-- Top Metrics Cards -->
-        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Scheduled Days</p>
-                    <h3 id="stat-total-shifts" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
-                    <p class="text-xs text-slate-500 mt-0.5"><span id="stat-off-days">0</span> Days Off</p>
-                </div>
-                <div class="w-12 h-12 bg-blue-50 text-brand-600 rounded-xl flex items-center justify-center text-xl">
-                    <i class="fa-regular fa-calendar-days"></i>
-                </div>
-            </div>
-
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Gross Hours</p>
-                    <h3 id="stat-gross-hours" class="text-2xl font-bold text-slate-900 mt-1">0.00</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Total shift duration</p>
-                </div>
-                <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-xl">
-                    <i class="fa-solid fa-clock"></i>
-                </div>
-            </div>
-
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Break Time</p>
-                    <h3 id="stat-break-hours" class="text-2xl font-bold text-amber-600 mt-1">0.00</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Unpaid / Meal breaks</p>
-                </div>
-                <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl">
-                    <i class="fa-solid fa-mug-hot"></i>
-                </div>
-            </div>
-
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Net Paid Hours</p>
-                    <h3 id="stat-net-hours" class="text-2xl font-bold text-indigo-600 mt-1">0.00</h3>
-                    <p class="text-xs text-slate-500 mt-0.5">Gross minus breaks</p>
-                </div>
-                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
-                    <i class="fa-solid fa-briefcase"></i>
-                </div>
-            </div>
-        </section>
-
-        <!-- Main Workspace Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-            <!-- Left Side: Interactive Dashboard Controls & View -->
-            <div class="lg:col-span-8 space-y-6">
-
-                <!-- Controls & Filter Header -->
-                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
-                    <!-- Search & Filter -->
-                    <div class="flex flex-wrap items-center gap-2">
-                        <div class="relative">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                            <input type="text" id="filter-search" oninput="applyFilters()" placeholder="Search date, day..." class="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none w-36 sm:w-48">
-                        </div>
-                        <select id="filter-month" onchange="applyFilters()" class="py-1.5 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                            <option value="ALL">All Months</option>
-                            <!-- Dynamically populated -->
-                        </select>
-                        <select id="filter-status" onchange="applyFilters()" class="py-1.5 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                            <option value="ALL">All Statuses</option>
-                            <option value="SHIFT">Has Shift</option>
-                            <option value="OFF">Off Day</option>
-                        </select>
-                    </div>
-
-                    <!-- View Toggle & Add Shift Button -->
-                    <div class="flex items-center gap-2 justify-end">
-                        <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-                            <button id="view-btn-table" onclick="switchView('table')" class="px-2.5 py-1 text-xs font-medium rounded-md text-slate-700 bg-white shadow-sm transition">
-                                <i class="fa-solid fa-list mr-1"></i> Table
-                            </button>
-                            <button id="view-btn-cards" onclick="switchView('cards')" class="px-2.5 py-1 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900 transition">
-                                <i class="fa-solid fa-border-all mr-1"></i> Cards
-                            </button>
-                        </div>
-
-                        <button onclick="openModal()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                            <i class="fa-solid fa-plus"></i> Add Entry
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Table View Container -->
-                <div id="container-table" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div class="overflow-x-auto custom-scrollbar">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold tracking-wider border-b border-slate-200">
-                                    <th class="py-3 px-4">Date & Day</th>
-                                    <th class="py-3 px-4">Scheduled Hours</th>
-                                    <th class="py-3 px-4">Break Time</th>
-                                    <th class="py-3 px-4">Net Hours</th>
-                                    <th class="py-3 px-4">Segments / Breakdown</th>
-                                    <th class="py-3 px-4">Status / Metadata</th>
-                                    <th class="py-3 px-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="table-body" class="divide-y divide-slate-100 text-xs text-slate-700">
-                                <!-- Dynamically Rendered -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Cards View Container (Hidden by default) -->
-                <div id="container-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
-                    <!-- Dynamically Rendered -->
-                </div>
-
-            </div>
-
-            <!-- Right Side: Parser Input & Regenerated Text Generator -->
-            <div class="lg:col-span-4 space-y-6" id="parser-section">
-
-                <!-- Raw Data Input Card -->
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div class="flex items-center space-x-2">
-                            <i class="fa-solid fa-terminal text-brand-600"></i>
-                            <h2 class="font-bold text-slate-800 text-sm">Raw Input Parser</h2>
-                        </div>
-                        <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">Kronos Raw</span>
-                    </div>
-
-                    <p class="text-xs text-slate-500 leading-relaxed">
-                        Paste your Kronos text output below. The parser automatically detects months, shifts, break durations, and metadata counters.
-                    </p>
-
-                    <textarea id="raw-text-input" rows="12" class="w-full p-3 font-mono text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none custom-scrollbar leading-relaxed" placeholder="Paste Kronos schedule text here..."></textarea>
-
-                    <div class="flex items-center gap-2">
-                        <button onclick="parseRawInput()" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition flex items-center justify-center gap-2 shadow-sm">
-                            <i class="fa-solid fa-bolt"></i> Process & Parse Text
-                        </button>
-                        <button onclick="resetToDefaultData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-3 rounded-lg text-xs transition title='Reset to sample data'">
-                            <i class="fa-solid fa-rotate-left"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Text Re-Generator Card -->
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div class="flex items-center space-x-2">
-                            <i class="fa-solid fa-file-export text-emerald-600"></i>
-                            <h2 class="font-bold text-slate-800 text-sm">Clean Output Generator</h2>
-                        </div>
-                        <button onclick="copyGeneratedText()" class="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                            <i class="fa-regular fa-copy"></i> Copy Text
-                        </button>
-                    </div>
-
-                    <p class="text-xs text-slate-500">
-                        Generates a normalized text format matching your changes.
-                    </p>
-
-                    <textarea id="generated-text-output" readonly rows="10" class="w-full p-3 font-mono text-xs bg-slate-50 text-slate-800 border border-slate-200 rounded-lg focus:outline-none custom-scrollbar leading-relaxed"></textarea>
-                </div>
-
-            </div>
-        </div>
-
-    </main>
-
-    <!-- Shift Modal (Create / Edit) -->
-    <div id="shift-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
-        <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-100 overflow-hidden transform scale-95 transition-transform duration-200" id="modal-card">
-
-            <div class="bg-slate-900 text-white p-4 px-6 flex items-center justify-between">
-                <h3 id="modal-title" class="font-bold text-sm flex items-center gap-2">
-                    <i class="fa-solid fa-pen-to-square text-brand-500"></i> Edit Shift
-                </h3>
-                <button onclick="closeModal()" class="text-slate-400 hover:text-white text-lg font-bold">
-                    &times;
-                </button>
-            </div>
-
-            <form id="shift-form" onsubmit="saveModalShift(event)" class="p-6 space-y-4 text-xs">
-                <input type="hidden" id="modal-shift-id">
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block font-semibold text-slate-700 mb-1">Month & Year</label>
-                        <input type="text" id="modal-month" required placeholder="e.g. October, 2026" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+        </style>
+    </head>
+    <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+        <!-- Navigation Header -->
+        <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 shadow-md">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-brand-600 p-2 rounded-lg text-white">
+                        <i class="fa-solid fa-calendar-check text-xl"></i>
                     </div>
                     <div>
-                        <label class="block font-semibold text-slate-700 mb-1">Date String</label>
-                        <input type="text" id="modal-date-str" required placeholder="e.g. 01 Thursday" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                        <h1 class="font-bold text-lg leading-none">Kronos Shift Manager</h1>
+                        <span class="text-xs text-slate-400">Parse, Review & Update Work Schedules</span>
                     </div>
                 </div>
-
-                <div class="flex items-center gap-2 my-2">
-                    <input type="checkbox" id="modal-is-off" onchange="toggleModalOffState()" class="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500">
-                    <label for="modal-is-off" class="font-semibold text-slate-700 cursor-pointer">Mark as Off / No Shift Scheduled ("-")</label>
+                <div class="flex items-center space-x-3">
+                    <button id="btn-parse-trigger"
+                            onclick="scrollToParser()"
+                            class="text-xs sm:text-sm bg-brand-600 hover:bg-brand-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-code"></i> Raw Input
+                    </button>
+                    <button onclick="exportData('json')"
+                            class="text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-code"></i> JSON
+                    </button>
+                    <button onclick="exportData('csv')"
+                            class="text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-csv"></i> CSV
+                    </button>
                 </div>
-
-                <!-- Shift Details Section -->
-                <div id="modal-shift-details" class="space-y-4 border-t border-slate-100 pt-3">
+            </div>
+        </header>
+        <!-- Main Container -->
+        <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+            <!-- Top Metrics Cards -->
+            <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Scheduled Days</p>
+                        <h3 id="stat-total-shifts" class="text-2xl font-bold text-slate-900 mt-1">0</h3>
+                        <p class="text-xs text-slate-500 mt-0.5"><span id="stat-off-days">0</span> Days Off</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-50 text-brand-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-regular fa-calendar-days"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Gross Hours</p>
+                        <h3 id="stat-gross-hours" class="text-2xl font-bold text-slate-900 mt-1">0.00</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Total shift duration</p>
+                    </div>
+                    <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Break Time</p>
+                        <h3 id="stat-break-hours" class="text-2xl font-bold text-amber-600 mt-1">0.00</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Unpaid / Meal breaks</p>
+                    </div>
+                    <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-mug-hot"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Net Paid Hours</p>
+                        <h3 id="stat-net-hours" class="text-2xl font-bold text-indigo-600 mt-1">0.00</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Gross minus breaks</p>
+                    </div>
+                    <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
+                        <i class="fa-solid fa-briefcase"></i>
+                    </div>
+                </div>
+            </section>
+            <!-- Main Workspace Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <!-- Left Side: Interactive Dashboard Controls & View -->
+                <div class="lg:col-span-8 space-y-6">
+                    <!-- Controls & Filter Header -->
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
+                        <!-- Search & Filter -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="relative">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                <input type="text"
+                                       id="filter-search"
+                                       oninput="applyFilters()"
+                                       placeholder="Search date, day..."
+                                       class="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none w-36 sm:w-48">
+                            </div>
+                            <select id="filter-month"
+                                    onchange="applyFilters()"
+                                    class="py-1.5 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="ALL">All Months</option>
+                                <!-- Dynamically populated -->
+                            </select>
+                            <select id="filter-status"
+                                    onchange="applyFilters()"
+                                    class="py-1.5 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                                <option value="ALL">All Statuses</option>
+                                <option value="SHIFT">Has Shift</option>
+                                <option value="OFF">Off Day</option>
+                            </select>
+                        </div>
+                        <!-- View Toggle & Add Shift Button -->
+                        <div class="flex items-center gap-2 justify-end">
+                            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+                                <button id="view-btn-table"
+                                        onclick="switchView('table')"
+                                        class="px-2.5 py-1 text-xs font-medium rounded-md text-slate-700 bg-white shadow-sm transition">
+                                    <i class="fa-solid fa-list mr-1"></i> Table
+                                </button>
+                                <button id="view-btn-cards"
+                                        onclick="switchView('cards')"
+                                        class="px-2.5 py-1 text-xs font-medium rounded-md text-slate-600 hover:text-slate-900 transition">
+                                    <i class="fa-solid fa-border-all mr-1"></i> Cards
+                                </button>
+                            </div>
+                            <button onclick="openModal()"
+                                    class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-plus"></i> Add Entry
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Table View Container -->
+                    <div id="container-table"
+                         class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="overflow-x-auto custom-scrollbar">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold tracking-wider border-b border-slate-200">
+                                        <th class="py-3 px-4">Date & Day</th>
+                                        <th class="py-3 px-4">Scheduled Hours</th>
+                                        <th class="py-3 px-4">Break Time</th>
+                                        <th class="py-3 px-4">Net Hours</th>
+                                        <th class="py-3 px-4">Segments / Breakdown</th>
+                                        <th class="py-3 px-4">Status / Metadata</th>
+                                        <th class="py-3 px-4 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-body"
+                                       class="divide-y divide-slate-100 text-xs text-slate-700">
+                                    <!-- Dynamically Rendered -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <!-- Cards View Container (Hidden by default) -->
+                    <div id="container-cards"
+                         class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
+                        <!-- Dynamically Rendered -->
+                    </div>
+                </div>
+                <!-- Right Side: Parser Input & Regenerated Text Generator -->
+                <div class="lg:col-span-4 space-y-6" id="parser-section">
+                    <!-- Raw Data Input Card -->
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-terminal text-brand-600"></i>
+                                <h2 class="font-bold text-slate-800 text-sm">Raw Input Parser</h2>
+                            </div>
+                            <span class="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">Kronos Raw</span>
+                        </div>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            Paste your Kronos text output below. The parser automatically detects months, shifts, break durations, and metadata counters.
+                        </p>
+                        <textarea id="raw-text-input"
+                                  rows="12"
+                                  class="w-full p-3 font-mono text-xs bg-slate-900 text-slate-100 border border-slate-700 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none custom-scrollbar leading-relaxed"
+                                  placeholder="Paste Kronos schedule text here..."></textarea>
+                        <div class="flex items-center gap-2">
+                            <button onclick="parseRawInput()"
+                                    class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg text-xs transition flex items-center justify-center gap-2 shadow-sm">
+                                <i class="fa-solid fa-bolt"></i> Process & Parse Text
+                            </button>
+                            <button onclick="resetToDefaultData()"
+                                    class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-3 rounded-lg text-xs transition title='Reset to sample data'">
+                                <i class="fa-solid fa-rotate-left"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Text Re-Generator Card -->
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-file-export text-emerald-600"></i>
+                                <h2 class="font-bold text-slate-800 text-sm">Clean Output Generator</h2>
+                            </div>
+                            <button onclick="copyGeneratedText()"
+                                    class="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
+                                <i class="fa-regular fa-copy"></i> Copy Text
+                            </button>
+                        </div>
+                        <p class="text-xs text-slate-500">Generates a normalized text format matching your changes.</p>
+                        <textarea id="generated-text-output"
+                                  readonly
+                                  rows="10"
+                                  class="w-full p-3 font-mono text-xs bg-slate-50 text-slate-800 border border-slate-200 rounded-lg focus:outline-none custom-scrollbar leading-relaxed"></textarea>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <!-- Shift Modal (Create / Edit) -->
+        <div id="shift-modal"
+             class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-200">
+            <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-100 overflow-hidden transform scale-95 transition-transform duration-200"
+                 id="modal-card">
+                <div class="bg-slate-900 text-white p-4 px-6 flex items-center justify-between">
+                    <h3 id="modal-title" class="font-bold text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-pen-to-square text-brand-500"></i> Edit Shift
+                    </h3>
+                    <button onclick="closeModal()"
+                            class="text-slate-400 hover:text-white text-lg font-bold">×</button>
+                </div>
+                <form id="shift-form"
+                      onsubmit="saveModalShift(event)"
+                      class="p-6 space-y-4 text-xs">
+                    <input type="hidden" id="modal-shift-id">
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block font-semibold text-slate-700 mb-1">Overall Shift Time Range</label>
-                            <input type="text" id="modal-overall-time" placeholder="10:00 AM - 7:00 PM" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            <label class="block font-semibold text-slate-700 mb-1">Month & Year</label>
+                            <input type="text"
+                                   id="modal-month"
+                                   required
+                                   placeholder="e.g. October, 2026"
+                                   class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
                         </div>
                         <div>
-                            <label class="block font-semibold text-slate-700 mb-1">Gross Hours</label>
-                            <input type="number" step="0.25" id="modal-gross-hours" placeholder="9.00" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            <label class="block font-semibold text-slate-700 mb-1">Date String</label>
+                            <input type="text"
+                                   id="modal-date-str"
+                                   required
+                                   placeholder="e.g. 01 Thursday"
+                                   class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
                         </div>
                     </div>
-
-                    <div class="grid grid-cols-2 gap-4">
+                    <div class="flex items-center gap-2 my-2">
+                        <input type="checkbox"
+                               id="modal-is-off"
+                               onchange="toggleModalOffState()"
+                               class="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500">
+                        <label for="modal-is-off"
+                               class="font-semibold text-slate-700 cursor-pointer">Mark as Off / No Shift Scheduled ("-")</label>
+                    </div>
+                    <!-- Shift Details Section -->
+                    <div id="modal-shift-details"
+                         class="space-y-4 border-t border-slate-100 pt-3">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Overall Shift Time Range</label>
+                                <input type="text"
+                                       id="modal-overall-time"
+                                       placeholder="10:00 AM - 7:00 PM"
+                                       class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Gross Hours</label>
+                                <input type="number"
+                                       step="0.25"
+                                       id="modal-gross-hours"
+                                       placeholder="9.00"
+                                       class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Break Time Range</label>
+                                <input type="text"
+                                       id="modal-break-time"
+                                       placeholder="2:30 PM - 3:30 PM"
+                                       class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">Break Hours</label>
+                                <input type="number"
+                                       step="0.25"
+                                       id="modal-break-hours"
+                                       placeholder="1.00"
+                                       class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            </div>
+                        </div>
                         <div>
-                            <label class="block font-semibold text-slate-700 mb-1">Break Time Range</label>
-                            <input type="text" id="modal-break-time" placeholder="2:30 PM - 3:30 PM" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            <label class="block font-semibold text-slate-700 mb-1">Additional Segments (One per line)</label>
+                            <textarea id="modal-segments"
+                                      rows="3"
+                                      placeholder="10:00 AM - 2:30 PM [4.50]&#10;3:30 PM - 7:00 PM [3.50]"
+                                      class="w-full p-2 font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"></textarea>
+                        </div>
+                    </div>
+                    <!-- Metadata Section -->
+                    <div class="border-t border-slate-100 pt-3 grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Approved Count</label>
+                            <input type="number"
+                                   id="modal-approved"
+                                   placeholder="e.g. 60"
+                                   class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
                         </div>
                         <div>
-                            <label class="block font-semibold text-slate-700 mb-1">Break Hours</label>
-                            <input type="number" step="0.25" id="modal-break-hours" placeholder="1.00" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
+                            <label class="block font-semibold text-slate-700 mb-1">In Progress Count</label>
+                            <input type="number"
+                                   id="modal-in-progress"
+                                   placeholder="e.g. 1"
+                                   class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
                         </div>
                     </div>
-
-                    <div>
-                        <label class="block font-semibold text-slate-700 mb-1">Additional Segments (One per line)</label>
-                        <textarea id="modal-segments" rows="3" placeholder="10:00 AM - 2:30 PM [4.50]&#10;3:30 PM - 7:00 PM [3.50]" class="w-full p-2 font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"></textarea>
+                    <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                        <button type="button"
+                                onclick="closeModal()"
+                                class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition">Cancel</button>
+                        <button type="submit"
+                                class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition">Save Changes</button>
                     </div>
-                </div>
-
-                <!-- Metadata Section -->
-                <div class="border-t border-slate-100 pt-3 grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block font-semibold text-slate-700 mb-1">Approved Count</label>
-                        <input type="number" id="modal-approved" placeholder="e.g. 60" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block font-semibold text-slate-700 mb-1">In Progress Count</label>
-                        <input type="number" id="modal-in-progress" placeholder="e.g. 1" class="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none">
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg transition">Save Changes</button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
-    </div>
-
-    <!-- Notification Toast -->
-    <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-lg border border-slate-800 flex items-center space-x-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
-        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
-        <span id="toast-message">Notification message</span>
-    </div>
-
-    <!-- Application Script -->
-    <script>
+        <!-- Notification Toast -->
+        <div id="toast"
+             class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-lg border border-slate-800 flex items-center space-x-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+            <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span id="toast-message">Notification message</span>
+        </div>
+        <!-- Application Script -->
+        <script>
         // Sample Initial Raw Data
         const SAMPLE_RAW_DATA = `October, 2026
 01 Thursday
@@ -1045,6 +1081,6 @@ Approved [48]`;
                 toast.classList.add('translate-y-20', 'opacity-0');
             }, 3000);
         }
-    </script>
-</body>
+        </script>
+    </body>
 </html>
