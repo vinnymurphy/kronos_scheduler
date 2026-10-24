@@ -43,7 +43,7 @@ run:
 
 
 test:
-	$(MANAGE) test -v 2 scoring
+	$(MANAGE) test -v 2 scheduler
 
 shell:
 	$(MANAGE) shell $(ARGS)
