@@ -50,3 +50,27 @@ class ShiftSegment(models.Model):
 
     def __str__(self):
         return f"{self.segment_type.capitalize()}: {self.start_time} - {self.end_time}"
+
+
+class ShiftEntry(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    month = models.CharField(max_length=50)  # e.g., "October, 2026"
+    date_str = models.CharField(max_length=50)  # e.g., "01 Thursday"
+    day_num = models.CharField(max_length=10)  # e.g., "01"
+    day_name = models.CharField(max_length=20)  # e.g., "Thursday"
+    is_off = models.BooleanField(default=False)
+    overall_time = models.CharField(max_length=50, blank=True, null=True)
+    gross_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    break_time = models.CharField(max_length=50, blank=True, null=True)
+    break_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    segments = models.JSONField(default=list)  # Stores individual work intervals
+    approved = models.IntegerField(blank=True, null=True)
+    in_progress = models.IntegerField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __str__(self):
+        status = "Off" if self.is_off else f"{self.gross_hours} hrs"
+        return f"{self.month} - {self.date_str} ({status})"

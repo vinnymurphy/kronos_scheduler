@@ -75,6 +75,10 @@
                             class="text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
                         <i class="fa-solid fa-file-csv"></i> CSV
                     </button>
+                    <button onclick="saveShiftsToDatabase()"
+                            class="text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Save to DB
+                    </button>
                 </div>
             </div>
         </header>
@@ -1081,6 +1085,34 @@ Approved [48]`;
                 toast.classList.add('translate-y-20', 'opacity-0');
             }, 3000);
         }
+        // Send parsed shifts to Django backend via AJAX
+function saveShiftsToDatabase() {
+    if (parsedShifts.length === 0) {
+        showToast('No shifts to save. Parse text first.', 'error');
+        return;
+    }
+
+    fetch("{% url 'save_shifts_api' %}", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            // 'X-CSRFToken': getCookie('csrftoken') // Uncomment if CSRF is enforced
+        },
+        body: JSON.stringify({ shifts: parsedShifts })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showToast(data.message);
+        } else {
+            showToast('Error: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Failed to connect to server.', 'error');
+    });
+}
         </script>
     </body>
 </html>

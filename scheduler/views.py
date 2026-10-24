@@ -1,10 +1,14 @@
 import json
 
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.db import DatabaseError
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.csrf import csrf_exempt
 
 from .forms import ScheduleUploadForm
-from .models import Shift
+from .models import Shift, ShiftEntry
 from .services import import_schedule_json
 
 
@@ -52,3 +56,55 @@ def schedule_list_view(request):
 
 def kronos_parser_view(request):
     return render(request, "scheduler/kronos_parser.html")
+
+
+@login_required
+@csrf_exempt  # (Optional: remove if passing Django's CSRF token from JS header)
+def save_shifts_api(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            shifts_data = data.get("shifts", [])
+
+            # Optional: Clear existing entries for a fresh sync or update iteratively
+            # ShiftEntry.objects.filter(user=request.user).delete()
+
+            saved_count = 0
+            for s in shifts_data:
+                ShiftEntry.objects.update_or_create(
+                    user=request.user,
+                    month=s.get("month"),
+                    date_str=s.get("dateStr"),
+                    defaults={
+                        "day_num": s.get("dayNum"),
+                        "day_name": s.get("dayName"),
+                        "is_off": s.get("isOff", False),
+                        "overall_time": s.get("overallTime", ""),
+                        "gross_hours": s.get("grossHours", 0),
+                        "break_time": s.get("breakTime", ""),
+                        "break_hours": s.get("breakHours", 0),
+                        "segments": s.get("segments", []),
+                        "approved": s.get("approved"),
+                        "in_progress": s.get("inProgress"),
+                    },
+                )
+                saved_count += 1
+
+            return JsonResponse(
+                {
+                    "status": "success",
+                    "message": f"Successfully saved {saved_count} shift records!",
+                }
+            )
+        except (
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+            ValidationError,
+            DatabaseError,
+        ) as e:
+            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+    return JsonResponse(
+        {"status": "error", "message": "Invalid request method."}, status=405
+    )
