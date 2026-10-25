@@ -1,0 +1,903 @@
+{% extends "base.html" %}
+{% block title %}Kronos Parser & Manager - Kronos Scheduler{% endblock %}
+{% block content %}
+    <!-- Page Header Actions -->
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h2 class="fw-bold text-dark mb-1">Kronos Shift Manager</h2>
+            <p class="text-muted small mb-0">Parse, review, update, and persist raw Kronos schedule data.</p>
+        </div>
+        <div class="col-auto d-flex gap-2">
+            <button onclick="exportData('json')" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-file-code me-1"></i> JSON
+            </button>
+            <button onclick="exportData('csv')" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-file-csv me-1"></i> CSV
+            </button>
+            <button onclick="saveShiftsToDatabase()" class="btn btn-success btn-sm">
+                <i class="fa-solid fa-cloud-arrow-up me-1"></i> Save to DB
+            </button>
+        </div>
+    </div>
+    <!-- Top Metrics Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted text-uppercase fs-7 fw-semibold mb-1">Scheduled Days</p>
+                        <h3 id="stat-total-shifts" class="fw-bold text-dark mb-0">0</h3>
+                        <p class="text-muted fs-8 mb-0 mt-1"><span id="stat-off-days">0</span> Days Off</p>
+                    </div>
+                    <div class="bg-primary bg-opacity-10 text-primary p-3 rounded-3 fs-4">
+                        <i class="fa-regular fa-calendar-days"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted text-uppercase fs-7 fw-semibold mb-1">Gross Hours</p>
+                        <h3 id="stat-gross-hours" class="fw-bold text-dark mb-0">0.00</h3>
+                        <p class="text-muted fs-8 mb-0 mt-1">Total shift duration</p>
+                    </div>
+                    <div class="bg-success bg-opacity-10 text-success p-3 rounded-3 fs-4">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted text-uppercase fs-7 fw-semibold mb-1">Total Break Time</p>
+                        <h3 id="stat-break-hours" class="fw-bold text-warning mb-0">0.00</h3>
+                        <p class="text-muted fs-8 mb-0 mt-1">Unpaid / Meal breaks</p>
+                    </div>
+                    <div class="bg-warning bg-opacity-10 text-warning p-3 rounded-3 fs-4">
+                        <i class="fa-solid fa-mug-hot"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <p class="text-muted text-uppercase fs-7 fw-semibold mb-1">Net Paid Hours</p>
+                        <h3 id="stat-net-hours" class="fw-bold text-info mb-0">0.00</h3>
+                        <p class="text-muted fs-8 mb-0 mt-1">Gross minus breaks</p>
+                    </div>
+                    <div class="bg-info bg-opacity-10 text-info p-3 rounded-3 fs-4">
+                        <i class="fa-solid fa-briefcase"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Main Workspace Grid -->
+    <div class="row g-4">
+        <!-- Left Side: Interactive Dashboard Controls & View -->
+        <div class="col-12 col-lg-8">
+            <!-- Controls & Filter Header -->
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body py-2.5">
+                    <div class="row g-2 align-items-center justify-content-between">
+                        <div class="col-12 col-md-auto">
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
+                                <!-- Search -->
+                                <div class="input-group input-group-sm w-auto">
+                                    <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                                    <input type="text"
+                                           id="filter-search"
+                                           oninput="applyFilters()"
+                                           placeholder="Search date..."
+                                           class="form-control border-start-0 bg-light">
+                                </div>
+                                <!-- Month Filter -->
+                                <select id="filter-month"
+                                        onchange="applyFilters()"
+                                        class="form-select form-select-sm bg-light w-auto">
+                                    <option value="ALL">All Months</option>
+                                </select>
+                                <!-- Status Filter -->
+                                <select id="filter-status"
+                                        onchange="applyFilters()"
+                                        class="form-select form-select-sm bg-light w-auto">
+                                    <option value="ALL">All Statuses</option>
+                                    <option value="SHIFT">Has Shift</option>
+                                    <option value="OFF">Off Day</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-auto d-flex gap-2 justify-content-md-end align-items-center">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button id="view-btn-table"
+                                        onclick="switchView('table')"
+                                        class="btn btn-dark active">
+                                    <i class="fa-solid fa-list me-1"></i> Table
+                                </button>
+                                <button id="view-btn-cards"
+                                        onclick="switchView('cards')"
+                                        class="btn btn-outline-dark">
+                                    <i class="fa-solid fa-border-all me-1"></i> Cards
+                                </button>
+                            </div>
+                            <button onclick="openModal()" class="btn btn-primary btn-sm">
+                                <i class="fa-solid fa-plus me-1"></i> Add Entry
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Table View Container -->
+            <div id="container-table" class="card shadow-sm border-0 overflow-hidden">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-dark text-uppercase fs-7">
+                            <tr>
+                                <th class="py-3 ps-3">Date & Day</th>
+                                <th class="py-3">Scheduled Hours</th>
+                                <th class="py-3">Break Time</th>
+                                <th class="py-3">Net Hours</th>
+                                <th class="py-3">Segments / Breakdown</th>
+                                <th class="py-3">Status</th>
+                                <th class="py-3 pe-3 text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Dynamically Rendered -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Cards View Container (Hidden by default) -->
+            <div id="container-cards" class="row g-3 d-none">
+                <!-- Dynamically Rendered -->
+            </div>
+        </div>
+        <!-- Right Side: Parser Input & Regenerated Text Generator -->
+        <div class="col-12 col-lg-4" id="parser-section">
+            <!-- Raw Data Input Card -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title fw-bold fs-6 mb-0 text-dark">
+                        <i class="fa-solid fa-terminal text-primary me-2"></i>Raw Input Parser
+                    </h5>
+                    <span class="badge bg-secondary bg-opacity-10 text-secondary font-monospace">Kronos Raw</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        Paste your Kronos text output below. The parser automatically detects months, shifts, break durations, and metadata counters.
+                    </p>
+                    <textarea id="raw-text-input"
+                              rows="10"
+                              class="form-control font-monospace bg-dark text-light fs-8 mb-3"
+                              placeholder="Paste Kronos schedule text here..."></textarea>
+                    <div class="d-flex gap-2">
+                        <button onclick="parseRawInput()" class="btn btn-primary btn-sm flex-grow-1">
+                            <i class="fa-solid fa-bolt me-1"></i> Process & Parse Text
+                        </button>
+                        <button onclick="resetToDefaultData()"
+                                class="btn btn-outline-secondary btn-sm"
+                                title="Reset to sample data">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Text Re-Generator Card -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title fw-bold fs-6 mb-0 text-dark">
+                        <i class="fa-solid fa-file-export text-success me-2"></i>Clean Output Generator
+                    </h5>
+                    <button onclick="copyGeneratedText()"
+                            class="btn btn-link btn-sm text-decoration-none p-0">
+                        <i class="fa-regular fa-copy me-1"></i> Copy Text
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Generates a normalized text format matching your changes.</p>
+                    <textarea id="generated-text-output"
+                              readonly
+                              rows="8"
+                              class="form-control font-monospace bg-light text-dark fs-8"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Shift Modal (Create / Edit) -->
+    <div class="modal fade" id="shift-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 id="modal-title" class="modal-title fs-6 fw-bold">
+                        <i class="fa-solid fa-pen-to-square text-primary me-2"></i>Edit Shift
+                    </h5>
+                    <button type="button"
+                            class="btn-close btn-close-white"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <form id="shift-form" onsubmit="saveModalShift(event)">
+                    <div class="modal-body small space-y-3">
+                        <input type="hidden" id="modal-shift-id">
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Month & Year</label>
+                                <input type="text"
+                                       id="modal-month"
+                                       required
+                                       placeholder="e.g. October, 2026"
+                                       class="form-control form-control-sm">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Date String</label>
+                                <input type="text"
+                                       id="modal-date-str"
+                                       required
+                                       placeholder="e.g. 01 Thursday"
+                                       class="form-control form-control-sm">
+                            </div>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input type="checkbox"
+                                   id="modal-is-off"
+                                   onchange="toggleModalOffState()"
+                                   class="form-check-input">
+                            <label for="modal-is-off"
+                                   class="form-check-label fw-semibold">Mark as Off / No Shift Scheduled ("-")</label>
+                        </div>
+                        <div id="modal-shift-details" class="border-top pt-3">
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Overall Time Range</label>
+                                    <input type="text"
+                                           id="modal-overall-time"
+                                           placeholder="10:00 AM - 7:00 PM"
+                                           class="form-control form-control-sm">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Gross Hours</label>
+                                    <input type="number"
+                                           step="0.25"
+                                           id="modal-gross-hours"
+                                           placeholder="9.00"
+                                           class="form-control form-control-sm">
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Break Time Range</label>
+                                    <input type="text"
+                                           id="modal-break-time"
+                                           placeholder="2:30 PM - 3:30 PM"
+                                           class="form-control form-control-sm">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label fw-semibold">Break Hours</label>
+                                    <input type="number"
+                                           step="0.25"
+                                           id="modal-break-hours"
+                                           placeholder="1.00"
+                                           class="form-control form-control-sm">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label fw-semibold">Additional Segments (One per line)</label>
+                                <textarea id="modal-segments"
+                                          rows="2"
+                                          placeholder="10:00 AM - 2:30 PM [4.50]"
+                                          class="form-control form-control-sm font-monospace"></textarea>
+                            </div>
+                        </div>
+                        <div class="border-top pt-3 row g-2">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">Approved Count</label>
+                                <input type="number"
+                                       id="modal-approved"
+                                       placeholder="e.g. 60"
+                                       class="form-control form-control-sm">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold">In Progress Count</label>
+                                <input type="number"
+                                       id="modal-in-progress"
+                                       placeholder="e.g. 1"
+                                       class="form-control form-control-sm">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2">
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm"
+                                data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block extra_js %}
+    <script>
+    // Sample Initial Raw Data
+    const SAMPLE_RAW_DATA = `October, 2026
+01 Thursday
+10:00 AM - 7:00 PM [9.00]
+10:00 AM - 2:30 PM [4.50]
+2:30 PM - 3:30 PM [1.00] Break
+3:30 PM - 7:00 PM [3.50]
+04 Sunday
+8:00 AM - 2:00 PM [6.00]
+8:00 AM - 11:00 AM [3.00]
+11:00 AM - 11:30 AM [0.50] Break
+11:30 AM - 2:00 PM [2.50]
+05 Monday
+10:00 AM - 2:00 PM [4.00]
+07 Wednesday
+12:00 PM - 5:00 PM [5.00]
+08 Thursday
+12:00 PM - 8:00 PM [8.00]
+12:00 PM - 4:30 PM [4.50]
+4:30 PM - 5:30 PM [1.00] Break
+5:30 PM - 8:00 PM [2.50]
+11 Sunday
+8:00 AM - 4:00 PM [8.00]
+8:00 AM - 12:30 PM [4.50]
+12:30 PM - 1:30 PM [1.00] Break
+1:30 PM - 4:00 PM [2.50]
+12 Monday
+3:00 PM - 10:00 PM [7.00]
+3:00 PM - 7:30 PM [4.50]
+7:30 PM - 8:30 PM [1.00] Break
+8:30 PM - 10:00 PM [1.50]
+14 Wednesday
+10:00 AM - 5:00 PM [7.00]
+10:00 AM - 2:30 PM [4.50]
+2:30 PM - 3:30 PM [1.00] Break
+3:30 PM - 5:00 PM [1.50]
+15 Thursday
+3:00 PM - 10:00 PM [7.00]
+3:00 PM - 7:30 PM [4.50]
+7:30 PM - 8:30 PM [1.00] Break
+8:30 PM - 10:00 PM [1.50]
+17 Saturday
+12:00 PM - 5:00 PM [5.00]
+18 Sunday
+8:00 AM - 5:00 PM [9.00]
+8:00 AM - 12:30 PM [4.50]
+12:30 PM - 1:30 PM [1.00] Break
+1:30 PM - 5:00 PM [3.50]
+19 Monday
+6:00 AM - 2:00 PM [8.00]
+6:00 AM - 10:30 AM [4.50]
+10:30 AM - 11:30 AM [1.00] Break
+11:30 AM - 2:00 PM [2.50]
+22 Thursday
+6:00 PM - 10:00 PM [4.00]
+24 Saturday
+-
+Approved [60]
+In Progress [1]
+25 Sunday
+-
+Approved [49]
+In Progress [1]
+3:00 PM - 9:00 PM [6.00]
+3:00 PM - 6:00 PM [3.00]
+6:00 PM - 6:30 PM [0.50] Break
+6:30 PM - 9:00 PM [2.50]
+26 Monday
+-
+Approved [39]
+In Progress [1]
+10:00 AM - 2:00 PM [4.00]
+27 Tuesday
+-
+Approved [26]
+In Progress [0]
+28 Wednesday
+-
+Approved [35]
+In Progress [0]
+6:00 AM - 11:00 AM [5.00]
+29 Thursday
+-
+Approved [44]
+In Progress [0]
+3:00 PM - 10:00 PM [7.00]
+3:00 PM - 7:30 PM [4.50]
+7:30 PM - 8:30 PM [1.00] Break
+8:30 PM - 10:00 PM [1.50]
+30 Friday
+-
+Approved [60]
+In Progress [1]
+31 Saturday
+-
+Approved [93]
+In Progress [0]
+November, 2026
+01 Sunday
+-
+Approved [56]
+In Progress [0]
+7:30 AM - 12:00 PM [4.50]
+02 Monday
+-
+Approved [38]
+In Progress [2]
+10:00 AM - 2:00 PM [4.00]
+03 Tuesday
+-
+Approved [36]
+In Progress [0]
+10:00 AM - 5:00 PM [7.00]
+10:00 AM - 2:30 PM [4.50]
+2:30 PM - 3:30 PM [1.00] Break
+3:30 PM - 5:00 PM [1.50]
+04 Wednesday
+-
+Approved [33]
+In Progress [0]
+10:00 AM - 5:00 PM [7.00]
+10:00 AM - 2:30 PM [4.50]
+2:30 PM - 3:30 PM [1.00] Break
+3:30 PM - 5:00 PM [1.50]
+05 Thursday
+-
+Approved [41]
+In Progress [0]
+6:00 PM - 10:00 PM [4.00]
+06 Friday
+-
+Approved [48]`;
+
+    let parsedShifts = [];
+    let currentView = 'table';
+    let modalInstance = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('raw-text-input').value = SAMPLE_RAW_DATA;
+        modalInstance = new bootstrap.Modal(document.getElementById('shift-modal'));
+        parseRawInput();
+    });
+
+    const PATTERNS = {
+        monthHeader: /^([A-Za-z]+,\s*\d{4})/i,
+        dateHeader: /^(\d{2})\s+([A-Za-z]+)/i,
+        shiftLine: /^(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))\s*\[(\d+(?:\.\d+)?)\](.*)/i,
+        approvedLine: /^Approved\s*\[(\d+)\]/i,
+        inProgressLine: /^In Progress\s*\[(\d+)\]/i,
+        offLine: /^-\s*$/
+    };
+
+    function parseRawInput() {
+        const rawText = document.getElementById('raw-text-input').value;
+        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+        let currentMonth = "Unknown Month";
+        let shifts = [];
+        let currentShift = null;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const monthMatch = line.match(PATTERNS.monthHeader);
+            if (monthMatch) {
+                currentMonth = monthMatch[1];
+                continue;
+            }
+
+            const dateMatch = line.match(PATTERNS.dateHeader);
+            if (dateMatch) {
+                if (currentShift) shifts.push(currentShift);
+                currentShift = {
+                    id: 'shift-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+                    month: currentMonth,
+                    dayNum: dateMatch[1],
+                    dayName: dateMatch[2],
+                    dateStr: `${dateMatch[1]} ${dateMatch[2]}`,
+                    isOff: false,
+                    overallTime: "",
+                    grossHours: 0,
+                    breakTime: "",
+                    breakHours: 0,
+                    segments: [],
+                    approved: null,
+                    inProgress: null
+                };
+                continue;
+            }
+
+            if (!currentShift) continue;
+
+            if (line.match(PATTERNS.offLine)) {
+                currentShift.isOff = true;
+                continue;
+            }
+
+            const appMatch = line.match(PATTERNS.approvedLine);
+            if (appMatch) {
+                currentShift.approved = parseInt(appMatch[1], 10);
+                continue;
+            }
+
+            const progMatch = line.match(PATTERNS.inProgressLine);
+            if (progMatch) {
+                currentShift.inProgress = parseInt(progMatch[1], 10);
+                continue;
+            }
+
+            const timeMatch = line.match(PATTERNS.shiftLine);
+            if (timeMatch) {
+                const startTime = timeMatch[1];
+                const endTime = timeMatch[2];
+                const hours = parseFloat(timeMatch[3]);
+                const suffix = timeMatch[4].trim();
+                const isBreak = suffix.toLowerCase().includes('break');
+
+                if (isBreak) {
+                    currentShift.breakTime = `${startTime} - ${endTime}`;
+                    currentShift.breakHours = hours;
+                } else if (!currentShift.overallTime) {
+                    currentShift.overallTime = `${startTime} - ${endTime}`;
+                    currentShift.grossHours = hours;
+                } else {
+                    currentShift.segments.push(`${startTime} - ${endTime} [${hours.toFixed(2)}]`);
+                }
+                continue;
+            }
+        }
+
+        if (currentShift) shifts.push(currentShift);
+
+        parsedShifts = shifts;
+        updateMonthFilterDropdown();
+        renderDashboard();
+        generateCleanText();
+        showToast('Schedule parsed successfully!');
+    }
+
+    function renderDashboard() {
+        const filtered = getFilteredShifts();
+        let totalShifts = 0, totalOff = 0, grossHours = 0, breakHours = 0;
+
+        filtered.forEach(s => {
+            if (s.isOff && !s.overallTime) {
+                totalOff++;
+            } else {
+                totalShifts++;
+                grossHours += (s.grossHours || 0);
+                breakHours += (s.breakHours || 0);
+            }
+        });
+
+        const netHours = Math.max(0, grossHours - breakHours);
+
+        document.getElementById('stat-total-shifts').textContent = totalShifts;
+        document.getElementById('stat-off-days').textContent = totalOff;
+        document.getElementById('stat-gross-hours').textContent = grossHours.toFixed(2);
+        document.getElementById('stat-break-hours').textContent = breakHours.toFixed(2);
+        document.getElementById('stat-net-hours').textContent = netHours.toFixed(2);
+
+        renderTableView(filtered);
+        renderCardsView(filtered);
+    }
+
+    function getFilteredShifts() {
+        const query = document.getElementById('filter-search').value.toLowerCase().trim();
+        const month = document.getElementById('filter-month').value;
+        const status = document.getElementById('filter-status').value;
+
+        return parsedShifts.filter(s => {
+            const matchesSearch = s.dateStr.toLowerCase().includes(query) || s.month.toLowerCase().includes(query);
+            const matchesMonth = (month === 'ALL' || s.month === month);
+            const hasShift = (!s.isOff && s.overallTime);
+            const matchesStatus = (status === 'ALL' || (status === 'SHIFT' && hasShift) || (status === 'OFF' && !hasShift));
+            return matchesSearch && matchesMonth && matchesStatus;
+        });
+    }
+
+    function renderTableView(shifts) {
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+
+        if (shifts.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5 text-muted">No shift records found matching filters.</td></tr>`;
+            return;
+        }
+
+        shifts.forEach(s => {
+            const tr = document.createElement('tr');
+            const netHours = Math.max(0, (s.grossHours || 0) - (s.breakHours || 0));
+            const statusBadge = (s.isOff && !s.overallTime)
+                ? `<span class="badge bg-secondary bg-opacity-10 text-secondary border">Off / None</span>`
+                : `<span class="badge bg-success bg-opacity-10 text-success border">Scheduled</span>`;
+
+            let metaBadge = '';
+            if (s.approved !== null || s.inProgress !== null) {
+                metaBadge = `<div class="fs-8 text-muted mt-1">` +
+                    (s.approved !== null ? `<span class="badge bg-primary bg-opacity-10 text-primary me-1">Appr: ${s.approved}</span>` : '') +
+                    (s.inProgress !== null ? `<span class="badge bg-warning bg-opacity-10 text-warning">Prog: ${s.inProgress}</span>` : '') +
+                    `</div>`;
+            }
+
+            let segmentsHtml = s.segments.map(seg => `<div class="fs-8 text-muted font-monospace">• ${seg}</div>`).join('');
+
+            tr.innerHTML = `
+                <td class="ps-3 fw-medium">
+                    <div>${s.dateStr}</div>
+                    <div class="fs-8 text-muted">${s.month}</div>
+                </td>
+                <td>
+                    ${s.overallTime ? `<div class="fw-semibold">${s.overallTime}</div><div class="fs-8 text-muted">Gross: ${s.grossHours.toFixed(2)} hrs</div>` : '<span class="text-muted">-</span>'}
+                </td>
+                <td class="text-warning-emphasis">
+                    ${s.breakTime ? `<div>${s.breakTime}</div><div class="fs-8 text-muted">(${s.breakHours.toFixed(2)} hrs)</div>` : '<span class="text-muted">-</span>'}
+                </td>
+                <td class="fw-bold text-info">${netHours.toFixed(2)} hrs</td>
+                <td>${segmentsHtml || '<span class="text-muted">-</span>'}</td>
+                <td>${statusBadge} ${metaBadge}</td>
+                <td class="pe-3 text-end">
+                    <button onclick="editShift('${s.id}')" class="btn btn-outline-primary btn-sm py-0 px-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="deleteShift('${s.id}')" class="btn btn-outline-danger btn-sm py-0 px-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderCardsView(shifts) {
+        const container = document.getElementById('container-cards');
+        container.innerHTML = '';
+
+        if (shifts.length === 0) {
+            container.innerHTML = `<div class="col-12 text-center py-5 text-muted">No shift records found.</div>`;
+            return;
+        }
+
+        shifts.forEach(s => {
+            const col = document.createElement('div');
+            col.className = "col-12 col-md-6";
+            const netHours = Math.max(0, (s.grossHours || 0) - (s.breakHours || 0));
+            const statusBadge = (s.isOff && !s.overallTime)
+                ? `<span class="badge bg-secondary bg-opacity-10 text-secondary border">Off</span>`
+                : `<span class="badge bg-success bg-opacity-10 text-success border">Scheduled</span>`;
+
+            col.innerHTML = `
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <h6 class="fw-bold mb-0">${s.dateStr}</h6>
+                                <span class="fs-8 text-muted">${s.month}</span>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                        <div class="small mb-2">
+                            <div><strong>Shift:</strong> ${s.overallTime || 'Off'}</div>
+                            <div><strong>Net Hours:</strong> <span class="text-info fw-bold">${netHours.toFixed(2)} hrs</span></div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-1 mt-3">
+                            <button onclick="editShift('${s.id}')" class="btn btn-outline-primary btn-sm">Edit</button>
+                            <button onclick="deleteShift('${s.id}')" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(col);
+        });
+    }
+
+    function switchView(view) {
+        currentView = view;
+        const btnTable = document.getElementById('view-btn-table');
+        const btnCards = document.getElementById('view-btn-cards');
+        const containerTable = document.getElementById('container-table');
+        const containerCards = document.getElementById('container-cards');
+
+        if (view === 'table') {
+            btnTable.className = "btn btn-dark active";
+            btnCards.className = "btn btn-outline-dark";
+            containerTable.classList.remove('d-none');
+            containerCards.classList.add('d-none');
+        } else {
+            btnCards.className = "btn btn-dark active";
+            btnTable.className = "btn btn-outline-dark";
+            containerCards.classList.remove('d-none');
+            containerTable.classList.add('d-none');
+        }
+    }
+
+    function updateMonthFilterDropdown() {
+        const select = document.getElementById('filter-month');
+        const months = [...new Set(parsedShifts.map(s => s.month))];
+        const currentVal = select.value;
+
+        select.innerHTML = `<option value="ALL">All Months</option>` + months.map(m => `<option value="${m}">${m}</option>`).join('');
+        select.value = months.includes(currentVal) ? currentVal : 'ALL';
+    }
+
+    function applyFilters() {
+        renderDashboard();
+    }
+
+    function openModal(shift = null) {
+        document.getElementById('modal-shift-id').value = shift ? shift.id : '';
+        document.getElementById('modal-month').value = shift ? shift.month : 'October, 2026';
+        document.getElementById('modal-date-str').value = shift ? shift.dateStr : '01 Thursday';
+        document.getElementById('modal-is-off').checked = shift ? shift.isOff : false;
+        document.getElementById('modal-overall-time').value = shift ? shift.overallTime : '';
+        document.getElementById('modal-gross-hours').value = shift ? shift.grossHours : '';
+        document.getElementById('modal-break-time').value = shift ? shift.breakTime : '';
+        document.getElementById('modal-break-hours').value = shift ? shift.breakHours : '';
+        document.getElementById('modal-segments').value = shift ? shift.segments.join('\n') : '';
+        document.getElementById('modal-approved').value = shift && shift.approved !== null ? shift.approved : '';
+        document.getElementById('modal-in-progress').value = shift && shift.inProgress !== null ? shift.inProgress : '';
+
+        toggleModalOffState();
+        modalInstance.show();
+    }
+
+    function closeModal() {
+        modalInstance.hide();
+    }
+
+    function toggleModalOffState() {
+        const isOff = document.getElementById('modal-is-off').checked;
+        const detailsDiv = document.getElementById('modal-shift-details');
+        detailsDiv.style.opacity = isOff ? '0.4' : '1';
+        detailsDiv.querySelectorAll('input, textarea').forEach(el => el.disabled = isOff);
+    }
+
+    function editShift(id) {
+        const shift = parsedShifts.find(s => s.id === id);
+        if (shift) openModal(shift);
+    }
+
+    function deleteShift(id) {
+        if (confirm('Are you sure you want to delete this shift entry?')) {
+            parsedShifts = parsedShifts.filter(s => s.id !== id);
+            renderDashboard();
+            generateCleanText();
+            showToast('Shift deleted.');
+        }
+    }
+
+    function saveModalShift(event) {
+        event.preventDefault();
+        const id = document.getElementById('modal-shift-id').value;
+        const month = document.getElementById('modal-month').value;
+        const dateStr = document.getElementById('modal-date-str').value;
+        const isOff = document.getElementById('modal-is-off').checked;
+        const dateParts = dateStr.split(' ');
+
+        const shiftData = {
+            id: id || ('shift-' + Date.now()),
+            month: month,
+            dayNum: dateParts[0] || '01',
+            dayName: dateParts[1] || 'Thursday',
+            dateStr: dateStr,
+            isOff: isOff,
+            overallTime: isOff ? '' : document.getElementById('modal-overall-time').value,
+            grossHours: isOff ? 0 : parseFloat(document.getElementById('modal-gross-hours').value || 0),
+            breakTime: isOff ? '' : document.getElementById('modal-break-time').value,
+            breakHours: isOff ? 0 : parseFloat(document.getElementById('modal-break-hours').value || 0),
+            segments: isOff ? [] : document.getElementById('modal-segments').value.split('\n').filter(l => l.trim().length > 0),
+            approved: document.getElementById('modal-approved').value ? parseInt(document.getElementById('modal-approved').value) : null,
+            inProgress: document.getElementById('modal-in-progress').value ? parseInt(document.getElementById('modal-in-progress').value) : null
+        };
+
+        if (id) {
+            const index = parsedShifts.findIndex(s => s.id === id);
+            if (index !== -1) parsedShifts[index] = shiftData;
+        } else {
+            parsedShifts.push(shiftData);
+        }
+
+        closeModal();
+        renderDashboard();
+        generateCleanText();
+        showToast('Shift saved successfully!');
+    }
+
+    function generateCleanText() {
+        let output = "";
+        let currentMonth = "";
+
+        parsedShifts.forEach(s => {
+            if (s.month !== currentMonth) {
+                currentMonth = s.month;
+                output += `${currentMonth}\n`;
+            }
+            output += `${s.dateStr}\n`;
+            if (s.isOff && !s.overallTime) {
+                output += "-\n";
+            } else {
+                if (s.overallTime) output += `${s.overallTime} [${s.grossHours.toFixed(2)}]\n`;
+                s.segments.forEach(seg => output += `${seg}\n`);
+                if (s.breakTime) output += `${s.breakTime} [${s.breakHours.toFixed(2)}] Break\n`;
+            }
+            if (s.approved !== null) output += `Approved [${s.approved}]\n`;
+            if (s.inProgress !== null) output += `In Progress [${s.inProgress}]\n`;
+        });
+
+        document.getElementById('generated-text-output').value = output.trim();
+    }
+
+    function copyGeneratedText() {
+        const textarea = document.getElementById('generated-text-output');
+        textarea.select();
+        navigator.clipboard.writeText(textarea.value);
+        showToast('Clean schedule text copied to clipboard!');
+    }
+
+    function exportData(type) {
+        if (parsedShifts.length === 0) {
+            showToast('No data to export.', 'error');
+            return;
+        }
+
+        if (type === 'json') {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(parsedShifts, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "kronos_shifts_export.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            showToast('JSON export downloaded.');
+        } else if (type === 'csv') {
+            let csvContent = "data:text/csv;charset=utf-8,Month,Date,Status,Gross Hours,Break Hours,Net Hours\n";
+            parsedShifts.forEach(s => {
+                const net = Math.max(0, (s.grossHours || 0) - (s.breakHours || 0));
+                const status = s.isOff ? 'Off' : 'Scheduled';
+                csvContent += `"${s.month}","${s.dateStr}","${status}",${s.grossHours},${s.breakHours},${net}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "kronos_shifts_export.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            showToast('CSV export downloaded.');
+        }
+    }
+
+    function resetToDefaultData() {
+        document.getElementById('raw-text-input').value = SAMPLE_RAW_DATA;
+        parseRawInput();
+    }
+
+    function saveShiftsToDatabase() {
+        if (parsedShifts.length === 0) {
+            showToast('No shifts to save. Parse text first.', 'error');
+            return;
+        }
+
+        fetch("{% url 'save_shifts_api' %}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shifts: parsedShifts })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast(data.message);
+            } else {
+                showToast('Error: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Failed to connect to server.', 'error');
+        });
+    }
+    </script>
+{% endblock %}

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Saved Schedules - Kronos Scheduler{% endblock %}
+{% block content %}
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h2 class="fw-bold text-dark mb-1">Saved Work Shifts</h2>
+            <p class="text-muted small mb-0">Manage, review, and filter your stored Kronos schedule entries.</p>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'kronos_parser' %}" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-code me-1"></i> Open Parser Tool
+            </a>
+        </div>
+    </div>
+    <!-- Filter & Search Controls Bar -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="row g-3 align-items-center justify-content-between">
+                <div class="col-12 col-md-8">
+                    <div class="row g-2">
+                        <!-- Search Input -->
+                        <div class="col-12 col-sm-5">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                                <input type="text"
+                                       id="filter-search"
+                                       oninput="applyFilters()"
+                                       placeholder="Search date, day..."
+                                       class="form-control border-start-0 bg-light">
+                            </div>
+                        </div>
+                        <!-- Month Filter -->
+                        <div class="col-12 col-sm-4">
+                            <select id="filter-month"
+                                    onchange="applyFilters()"
+                                    class="form-select form-select-sm bg-light">
+                                <option value="ALL">All Months</option>
+                                {% for m in unique_months %}
+                                    <option value="{{ m }}">{{ m }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <!-- Status Filter -->
+                        <div class="col-12 col-sm-3">
+                            <select id="filter-status"
+                                    onchange="applyFilters()"
+                                    class="form-select form-select-sm bg-light">
+                                <option value="ALL">All Statuses</option>
+                                <option value="SCHEDULED">Scheduled</option>
+                                <option value="OFF">Off Day</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-auto text-md-end text-muted small">
+                    Showing <span id="visible-count" class="fw-bold text-dark">0</span> entries
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Shift Table Container -->
+    <div class="card shadow-sm border-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-dark text-uppercase fs-7">
+                    <tr>
+                        <th class="py-3 ps-3">Month</th>
+                        <th class="py-3">Date & Day</th>
+                        <th class="py-3">Shift Time</th>
+                        <th class="py-3">Gross Hours</th>
+                        <th class="py-3">Break Time</th>
+                        <th class="py-3 pe-3">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="shift-table-body">
+                    {% for s in shifts %}
+                        <tr class="shift-row"
+                            data-month="{{ s.month }}"
+                            data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}"
+                            data-search="{{ s.month|lower }} {{ s.date_str|lower }}">
+                            <td class="py-3 ps-3 fw-semibold text-dark">{{ s.month }}</td>
+                            <td class="py-3 fw-bold text-secondary">{{ s.date_str }}</td>
+                            <td class="py-3">
+                                {% if s.overall_time %}
+                                    <span class="text-dark fw-medium">{{ s.overall_time }}</span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-3 fw-bold text-success">{{ s.gross_hours }} hrs</td>
+                            <td class="py-3 text-warning-emphasis">{{ s.break_hours }} hrs</td>
+                            <td class="py-3 pe-3">
+                                {% if s.is_off %}
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25">Off / None</span>
+                                {% else %}
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Scheduled</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr id="empty-row">
+                            <td colspan="6" class="text-center py-5 text-muted">
+                                <i class="fa-regular fa-calendar-xmark fs-3 mb-2 d-block"></i>
+                                No saved shifts found. Parse and save some shifts from the parser tool first!
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}
+{% block extra_js %}
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        applyFilters();
+    });
+
+    function applyFilters() {
+        const searchQuery = document.getElementById('filter-search').value.toLowerCase().trim();
+        const selectedMonth = document.getElementById('filter-month').value;
+        const selectedStatus = document.getElementById('filter-status').value;
+
+        const rows = document.querySelectorAll('.shift-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const month = row.getAttribute('data-month');
+            const status = row.getAttribute('data-status');
+            const searchData = row.getAttribute('data-search');
+
+            let matchesSearch = searchData.includes(searchQuery);
+            let matchesMonth = (selectedMonth === 'ALL' || month === selectedMonth);
+            let matchesStatus = (selectedStatus === 'ALL' || status === selectedStatus);
+
+            if (matchesSearch && matchesMonth && matchesStatus) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        document.getElementById('visible-count').textContent = visibleCount;
+    }
+    </script>
+{% endblock %}
