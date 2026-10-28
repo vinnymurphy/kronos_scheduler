@@ -1,5 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Saved Schedules - Kronos Scheduler{% endblock %}
+{% block extra_head %}
+    <style>
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+
+        .calendar-day,
+        .calendar-weekday {
+            border: 1px solid #dee2e6;
+            min-width: 0;
+            padding: 0.4rem;
+        }
+
+        .calendar-weekday {
+            background: #f8f9fa;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .calendar-day {
+            min-height: 7rem;
+            overflow-wrap: anywhere;
+        }
+
+        .calendar-day-outside-range {
+            background: #f8f9fa;
+        }
+
+        .calendar-day-number {
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        @media (max-width: 575.98px) {
+            .calendar-day,
+            .calendar-weekday {
+                padding: 0.2rem;
+            }
+
+            .calendar-day {
+                min-height: 5rem;
+                font-size: 0.7rem;
+            }
+        }
+    </style>
+{% endblock %}
 {% block content %}
     <div class="row mb-4 align-items-center">
         <div class="col">
@@ -7,9 +55,16 @@
             <p class="text-muted small mb-0">Manage, review, and filter your stored Kronos schedule entries.</p>
         </div>
         <div class="col-auto">
-            <a href="{% url 'kronos_parser' %}" class="btn btn-primary btn-sm">
-                <i class="fa-solid fa-code me-1"></i> Open Parser Tool
-            </a>
+            <div class="d-flex gap-2">
+                <a href="{% url 'schedule_export_pdf' %}"
+                   id="export-schedule-pdf"
+                   class="btn btn-outline-danger btn-sm">
+                    <i class="fa-solid fa-file-pdf me-1"></i> Export PDF
+                </a>
+                <a href="{% url 'kronos_parser' %}" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-code me-1"></i> Open Parser Tool
+                </a>
+            </div>
         </div>
     </div>
     <!-- Filter & Search Controls Bar -->
@@ -58,13 +113,34 @@
         </div>
     </div>
     <!-- Shift Table Container -->
-    <div class="card shadow-sm border-0">
+    <div class="d-flex justify-content-end mb-2">
+        <div class="btn-group btn-group-sm"
+             role="group"
+             aria-label="Schedule view">
+            <button type="button"
+                    id="table-view-button"
+                    class="btn btn-dark"
+                    onclick="switchScheduleView('table')">Table</button>
+            <button type="button"
+                    id="calendar-view-button"
+                    class="btn btn-outline-dark"
+                    onclick="switchScheduleView('calendar')">Calendar</button>
+        </div>
+    </div>
+    <div id="table-view" class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 small">
                 <thead class="table-dark text-uppercase fs-7">
                     <tr>
-                        <th class="py-3 ps-3">Month</th>
-                        <th class="py-3">Date & Day</th>
+                        <th id="date-column" class="py-3 ps-3" aria-sort="descending">
+                            <button id="sort-date"
+                                    type="button"
+                                    class="btn btn-link link-light text-decoration-none fw-bold p-0"
+                                    aria-label="Sort by day and date, latest to earliest"
+                                    onclick="toggleDateSort()">
+                                Day and date <span id="sort-date-icon" aria-hidden="true">↓</span>
+                            </button>
+                        </th>
                         <th class="py-3">Shift Time</th>
                         <th class="py-3">Gross Hours</th>
                         <th class="py-3">Break Time</th>
@@ -76,9 +152,12 @@
                         <tr class="shift-row"
                             data-month="{{ s.month }}"
                             data-date="{{ s.schedule_date|date:'Y-m-d' }}"
-                            data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}">
-                            <td class="py-3 ps-3 fw-semibold text-dark">{{ s.month }}</td>
-                            <td class="py-3 fw-bold text-secondary">{{ s.date_str }}</td>
+                            data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}"
+                            data-overall-time="{{ s.overall_time|default:'' }}"
+                            data-gross-hours="{{ s.gross_hours }}"
+                            data-break-time="{{ s.break_time|default:'' }}"
+                            data-break-hours="{{ s.break_hours }}">
+                            <td class="py-3 ps-3 fw-bold text-secondary">{{ s.schedule_date|date:"l, F j, Y" }}</td>
                             <td class="py-3">
                                 {% if s.overall_time %}
                                     <span class="text-dark fw-medium">{{ s.overall_time }}</span>
@@ -98,7 +177,7 @@
                         </tr>
                     {% empty %}
                         <tr id="empty-row">
-                            <td colspan="6" class="text-center py-5 text-muted">
+                            <td colspan="5" class="text-center py-5 text-muted">
                                 <i class="fa-regular fa-calendar-xmark fs-3 mb-2 d-block"></i>
                                 No saved shifts found. Parse and save some shifts from the parser tool first!
                             </td>
@@ -108,12 +187,71 @@
             </table>
         </div>
     </div>
+    <section id="calendar-view"
+             class="card shadow-sm border-0 d-none"
+             aria-label="Schedule calendar">
+        <div class="card-body">
+            <div id="calendar-months" class="row g-3"></div>
+        </div>
+    </section>
 {% endblock %}
 {% block extra_js %}
     <script>
+    let dateSortDirection = 'descending';
+    let currentScheduleView = 'table';
+
     document.addEventListener('DOMContentLoaded', () => {
         applyFilters();
     });
+
+    function switchScheduleView(view) {
+        currentScheduleView = view;
+        const showCalendar = view === 'calendar';
+        document.getElementById('table-view').classList.toggle('d-none', showCalendar);
+        document.getElementById('calendar-view').classList.toggle('d-none', !showCalendar);
+        document.getElementById('table-view-button').className =
+            showCalendar ? 'btn btn-outline-dark' : 'btn btn-dark';
+        document.getElementById('calendar-view-button').className =
+            showCalendar ? 'btn btn-dark' : 'btn btn-outline-dark';
+        updateExportLink();
+        if (showCalendar) renderCalendar();
+    }
+
+    function toggleDateSort() {
+        dateSortDirection = dateSortDirection === 'descending' ? 'ascending' : 'descending';
+        const dateColumn = document.getElementById('date-column');
+        const sortButton = document.getElementById('sort-date');
+        const sortIcon = document.getElementById('sort-date-icon');
+        const rows = Array.from(document.querySelectorAll('.shift-row'));
+
+        rows.sort((a, b) => {
+            const comparison = a.dataset.date.localeCompare(b.dataset.date);
+            return dateSortDirection === 'ascending' ? comparison : -comparison;
+        });
+        rows.forEach(row => document.getElementById('shift-table-body').appendChild(row));
+
+        dateColumn.setAttribute('aria-sort', dateSortDirection);
+        const sortOrder = dateSortDirection === 'ascending' ? 'earliest to latest' : 'latest to earliest';
+        sortButton.setAttribute('aria-label', `Sort by day and date, ${sortOrder}`);
+        sortIcon.textContent = dateSortDirection === 'ascending' ? '↑' : '↓';
+        updateExportLink();
+    }
+
+    function updateExportLink() {
+        const exportLink = document.getElementById('export-schedule-pdf');
+        const exportUrl = new URL(exportLink.href);
+        const startDate = document.getElementById('filter-start-date').value;
+        const month = document.getElementById('filter-month').value;
+        const status = document.getElementById('filter-status').value;
+
+        exportUrl.search = '';
+        if (startDate) exportUrl.searchParams.set('start_date', startDate);
+        if (month !== 'ALL') exportUrl.searchParams.set('month', month);
+        if (status !== 'ALL') exportUrl.searchParams.set('status', status);
+        exportUrl.searchParams.set('sort', document.getElementById('date-column').getAttribute('aria-sort'));
+        exportUrl.searchParams.set('view', currentScheduleView);
+        exportLink.href = exportUrl;
+    }
 
     function applyFilters() {
         const startDate = document.getElementById('filter-start-date').value;
@@ -141,6 +279,110 @@
         });
 
         document.getElementById('visible-count').textContent = visibleCount;
+        updateExportLink();
+        renderCalendar();
+    }
+
+    function renderCalendar() {
+        const container = document.getElementById('calendar-months');
+        const allRows = Array.from(document.querySelectorAll('.shift-row'));
+        const visibleRows = allRows.filter(row => row.style.display !== 'none');
+        container.replaceChildren();
+
+        if (allRows.length === 0) {
+            container.textContent = 'No saved shifts found.';
+            return;
+        }
+
+        const dates = allRows.map(row => row.dataset.date).sort();
+        const startDate = document.getElementById('filter-start-date').value || dates[0];
+        const endDate = dates[dates.length - 1];
+        if (startDate > endDate) {
+            container.textContent = 'No scheduled dates from the selected start date.';
+            return;
+        }
+
+        const shiftsByDate = new Map();
+        visibleRows.forEach(row => {
+            const shifts = shiftsByDate.get(row.dataset.date) || [];
+            shifts.push(row);
+            shiftsByDate.set(row.dataset.date, shifts);
+        });
+
+        const grid = document.createElement('div');
+        grid.className = 'calendar-grid';
+        ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].forEach(day => {
+            const weekday = document.createElement('div');
+            weekday.className = 'calendar-weekday';
+            weekday.textContent = day;
+            grid.appendChild(weekday);
+        });
+
+        const start = parseIsoDate(startDate);
+        const end = parseIsoDate(endDate);
+        const firstWeekday = (start.getUTCDay() + 1) % 7;
+        for (let index = 0; index < firstWeekday; index++) {
+            const blank = document.createElement('div');
+            blank.className = 'calendar-day calendar-day-outside-range';
+            grid.appendChild(blank);
+        }
+
+        for (let date = start; date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
+            const isoDate = formatIsoDate(
+                date.getUTCFullYear(),
+                date.getUTCMonth(),
+                date.getUTCDate()
+            );
+            const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
+            if (date.getUTCDate() === 1 || isoDate === startDate) {
+                const monthLabel = document.createElement('div');
+                monthLabel.className = 'small fw-semibold text-primary';
+                monthLabel.textContent = date.toLocaleDateString(
+                    undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }
+                );
+                dayCell.appendChild(monthLabel);
+            }
+
+            const number = document.createElement('div');
+            number.className = 'calendar-day-number';
+            number.textContent = date.getUTCDate();
+            dayCell.appendChild(number);
+
+            (shiftsByDate.get(isoDate) || []).forEach(row => {
+                const details = document.createElement('div');
+                details.className = row.dataset.status === 'OFF'
+                    ? 'mt-1 text-muted'
+                    : 'mt-1 text-primary';
+                const time = row.dataset.overallTime || 'Off / None';
+                details.textContent = `${time} · ${row.dataset.grossHours} hrs`;
+                dayCell.appendChild(details);
+                if (row.dataset.breakTime) {
+                    const breakDetails = document.createElement('div');
+                    breakDetails.className = 'small text-warning-emphasis';
+                    breakDetails.textContent =
+                        `Break: ${row.dataset.breakTime} (${row.dataset.breakHours} hrs)`;
+                    dayCell.appendChild(breakDetails);
+                }
+            });
+            grid.appendChild(dayCell);
+        }
+
+        while (grid.children.length % 7 !== 0) {
+            const blank = document.createElement('div');
+            blank.className = 'calendar-day calendar-day-outside-range';
+            grid.appendChild(blank);
+        }
+        container.appendChild(grid);
+    }
+
+    function parseIsoDate(date) {
+        const [year, month, day] = date.split('-').map(Number);
+        return new Date(Date.UTC(year, month - 1, day));
+    }
+
+    function formatIsoDate(year, month, day) {
+        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
     </script>
 {% endblock %}
