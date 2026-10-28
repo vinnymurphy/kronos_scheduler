@@ -150,14 +150,14 @@
                 <tbody id="shift-table-body">
                     {% for s in shifts %}
                         <tr class="shift-row"
-                            data-month="{{ s.month }}"
-                            data-date="{{ s.schedule_date|date:'Y-m-d' }}"
+                            data-month="{{ s.date|date:'F, Y' }}"
+                            data-date="{{ s.date|date:'Y-m-d' }}"
                             data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}"
                             data-overall-time="{{ s.overall_time|default:'' }}"
                             data-gross-hours="{{ s.gross_hours }}"
                             data-break-time="{{ s.break_time|default:'' }}"
                             data-break-hours="{{ s.break_hours }}">
-                            <td class="py-3 ps-3 fw-bold text-secondary">{{ s.schedule_date|date:"l, F j, Y" }}</td>
+                            <td class="py-3 ps-3 fw-bold text-secondary">{{ s.date|date:"l, F j, Y" }}</td>
                             <td class="py-3">
                                 {% if s.overall_time %}
                                     <span class="text-dark fw-medium">{{ s.overall_time }}</span>
@@ -350,12 +350,11 @@
             dayCell.appendChild(number);
 
             (shiftsByDate.get(isoDate) || []).forEach(row => {
+                if (row.dataset.status === 'OFF') return;
+
                 const details = document.createElement('div');
-                details.className = row.dataset.status === 'OFF'
-                    ? 'mt-1 text-muted'
-                    : 'mt-1 text-primary';
-                const time = row.dataset.overallTime || 'Off / None';
-                details.textContent = `${time} · ${row.dataset.grossHours} hrs`;
+                details.className = 'mt-1 text-primary';
+                details.textContent = `${row.dataset.overallTime} · ${row.dataset.grossHours} hrs`;
                 dayCell.appendChild(details);
                 if (row.dataset.breakTime) {
                     const breakDetails = document.createElement('div');

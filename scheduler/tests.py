@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -47,8 +48,31 @@ class SaveShiftsApiTests(TestCase):
         )
         self.assertEqual(ShiftEntry.objects.filter(user=self.user).count(), 1)
         entry = ShiftEntry.objects.get(user=self.user)
+        self.assertEqual(entry.date.isoformat(), "2026-10-26")
         self.assertEqual(entry.overall_time, "10:00 AM - 2:00 PM")
         self.assertFalse(entry.is_off)
+
+    def test_saving_shift_with_iso_date(self):
+        response = self.client.post(
+            reverse("save_shifts_api"),
+            data=json.dumps(
+                {
+                    "shifts": [
+                        {
+                            "date": "2026-11-02",
+                            "overallTime": "10:00 AM - 2:00 PM",
+                            "grossHours": 4,
+                        }
+                    ]
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            ShiftEntry.objects.filter(user=self.user, date="2026-11-02").exists()
+        )
 
 
 class ScheduleListOrderingTests(TestCase):
@@ -64,23 +88,31 @@ class ScheduleListOrderingTests(TestCase):
             ("November, 2026", "01 Sunday"),
         ]
         for month, date_str in entries:
-            day_num, day_name = date_str.split()
+            schedule_date = datetime.strptime(
+                f"{date_str.split()[0]} {month}", "%d %B, %Y"
+            ).date()
             ShiftEntry.objects.create(
                 user=self.user,
-                month=month,
-                date_str=date_str,
-                day_num=day_num,
-                day_name=day_name,
-                overall_time=("10:00 AM - 2:00 PM" if date_str == "02 Monday" else ""),
-                gross_hours=4 if date_str == "02 Monday" else 0,
+                date=schedule_date,
+                overall_time=(
+                    "10:00 AM - 2:00 PM"
+                    if schedule_date.isoformat() == "2026-11-02"
+                    else ""
+                ),
+                gross_hours=4 if schedule_date.isoformat() == "2026-11-02" else 0,
             )
 
         response = self.client.get(reverse("schedule_list"))
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            list(response.context["shifts"].values_list("date_str", flat=True)),
-            ["02 Monday", "01 Sunday", "31 Saturday", "30 Friday"],
+            list(response.context["shifts"].values_list("date", flat=True)),
+            [
+                datetime(2026, 11, 2).date(),
+                datetime(2026, 11, 1).date(),
+                datetime(2026, 10, 31).date(),
+                datetime(2026, 10, 30).date(),
+            ],
         )
         self.assertContains(response, 'id="filter-start-date"')
         self.assertContains(response, 'data-date="2026-11-02"')
@@ -88,6 +120,8 @@ class ScheduleListOrderingTests(TestCase):
         self.assertContains(response, 'id="calendar-view-button"')
         self.assertContains(response, 'data-overall-time="10:00 AM - 2:00 PM"')
         self.assertContains(response, "function renderCalendar()")
+        self.assertContains(response, "if (row.dataset.status === 'OFF') return;")
+        self.assertNotContains(response, "Off / None ·")
         self.assertContains(response, "const endDate = dates[dates.length - 1]")
         self.assertContains(response, "for (let date = start; date <= end;")
         self.assertContains(response, "container.appendChild(grid)")
@@ -113,20 +147,14 @@ class ScheduleListOrderingTests(TestCase):
     def test_schedule_pdf_contains_only_the_users_schedule_table(self):
         ShiftEntry.objects.create(
             user=self.user,
-            month="November, 2026",
-            date_str="02 Monday",
-            day_num="02",
-            day_name="Monday",
+            date=datetime(2026, 11, 2).date(),
             overall_time="10:00 AM - 2:00 PM",
             gross_hours=4,
         )
         other_user = User.objects.create_user(username="other", password="test-pass")
         ShiftEntry.objects.create(
             user=other_user,
-            month="November, 2026",
-            date_str="03 Tuesday",
-            day_num="03",
-            day_name="Tuesday",
+            date=datetime(2026, 11, 3).date(),
         )
 
         response = self.client.get(reverse("schedule_export_pdf"))
@@ -148,13 +176,12 @@ class ScheduleListOrderingTests(TestCase):
             ("October, 2026", "31 Saturday", False),
         ]
         for month, date_str, is_off in entries:
-            day_num, day_name = date_str.split()
+            schedule_date = datetime.strptime(
+                f"{date_str.split()[0]} {month}", "%d %B, %Y"
+            ).date()
             ShiftEntry.objects.create(
                 user=self.user,
-                month=month,
-                date_str=date_str,
-                day_num=day_num,
-                day_name=day_name,
+                date=schedule_date,
                 is_off=is_off,
             )
         pdf_renderer.return_value.write_pdf.return_value = b"%PDF test"
@@ -177,9 +204,20 @@ class ScheduleListOrderingTests(TestCase):
                 self.assertEqual(response.status_code, 200)
                 exported_shifts = render_template.call_args.args[1]["shifts"]
                 self.assertEqual(
-                    [shift.date_str for shift in exported_shifts],
-                    expected_order,
+                    [shift.date.strftime("%d") for shift in exported_shifts],
+                    [date.split()[0] for date in expected_order],
                 )
+
+        response = self.client.get(
+            reverse("schedule_export_pdf"),
+            {"month": "November, 2026"},
+        )
+        self.assertEqual(response.status_code, 200)
+        exported_shifts = render_template.call_args.args[1]["shifts"]
+        self.assertEqual(
+            {shift.date.strftime("%B, %Y") for shift in exported_shifts},
+            {"November, 2026"},
+        )
 
     @patch("scheduler.views.HTML")
     @patch("scheduler.views.render_to_string", return_value="<table></table>")
@@ -191,13 +229,12 @@ class ScheduleListOrderingTests(TestCase):
             ("November, 2026", "02 Monday"),
             ("November, 2026", "07 Saturday"),
         ):
-            day_num, day_name = date_str.split()
+            schedule_date = datetime.strptime(
+                f"{date_str.split()[0]} {month}", "%d %B, %Y"
+            ).date()
             ShiftEntry.objects.create(
                 user=self.user,
-                month=month,
-                date_str=date_str,
-                day_num=day_num,
-                day_name=day_name,
+                date=schedule_date,
                 overall_time="10:00 AM - 2:00 PM",
                 gross_hours=4,
             )
@@ -229,7 +266,29 @@ class ScheduleListOrderingTests(TestCase):
         )
         self.assertFalse(weeks[0][0]["in_range"])
         self.assertEqual(
-            [shift.date_str for shift in weeks[0][2]["shifts"]], ["02 Monday"]
+            [shift.date.isoformat() for shift in weeks[0][2]["shifts"]],
+            ["2026-11-02"],
         )
         self.assertTrue(weeks[0][2]["month_label"])
         self.assertEqual(weeks[1][0]["date"].isoformat(), "2026-11-07")
+
+    @patch("scheduler.views.HTML")
+    def test_calendar_pdf_template_leaves_off_shift_details_blank(self, pdf_renderer):
+        ShiftEntry.objects.create(
+            user=self.user,
+            date=datetime(2026, 11, 6).date(),
+            is_off=True,
+            gross_hours=0,
+        )
+        pdf_renderer.return_value.write_pdf.return_value = b"%PDF test"
+
+        response = self.client.get(
+            reverse("schedule_export_pdf"),
+            {"view": "calendar"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = pdf_renderer.call_args.kwargs["string"]
+        self.assertIn("6", html)
+        self.assertNotIn("Off / None", html)
+        self.assertNotIn("0.00 hrs", html)
