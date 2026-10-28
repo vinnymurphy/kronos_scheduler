@@ -1,8 +1,11 @@
 import json
+from datetime import datetime
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
+from django.db.models import Case, IntegerField, Value, When
+from django.db.models.functions import Cast
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.csrf import csrf_exempt
@@ -62,26 +65,28 @@ def save_shifts_api(request):
             # Optional: Clear existing entries for a fresh sync or update iteratively
             # ShiftEntry.objects.filter(user=request.user).delete()
 
-            saved_count = 0
-            for s in shifts_data:
-                ShiftEntry.objects.update_or_create(
-                    user=request.user,
-                    month=s.get("month"),
-                    date_str=s.get("dateStr"),
-                    defaults={
-                        "day_num": s.get("dayNum"),
-                        "day_name": s.get("dayName"),
-                        "is_off": s.get("isOff", False),
-                        "overall_time": s.get("overallTime", ""),
-                        "gross_hours": s.get("grossHours", 0),
-                        "break_time": s.get("breakTime", ""),
-                        "break_hours": s.get("breakHours", 0),
-                        "segments": s.get("segments", []),
-                        "approved": s.get("approved"),
-                        "in_progress": s.get("inProgress"),
-                    },
+            with transaction.atomic():
+                for s in shifts_data:
+                    ShiftEntry.objects.update_or_create(
+                        user=request.user,
+                        month=s.get("month"),
+                        day_num=s.get("dayNum"),
+                        defaults={
+                            "date_str": s.get("dateStr"),
+                            "day_name": s.get("dayName"),
+                            "is_off": s.get("isOff", False),
+                            "overall_time": s.get("overallTime", ""),
+                            "gross_hours": s.get("grossHours", 0),
+                            "break_time": s.get("breakTime", ""),
+                            "break_hours": s.get("breakHours", 0),
+                            "segments": s.get("segments", []),
+                            "approved": s.get("approved"),
+                            "in_progress": s.get("inProgress"),
+                        },
+                    )
+                saved_count = len(
+                    {(s.get("month"), s.get("dayNum")) for s in shifts_data}
                 )
-                saved_count += 1
 
             return JsonResponse(
                 {
@@ -105,13 +110,19 @@ def save_shifts_api(request):
 
 @login_required
 def schedule_list_view(request):
-    shifts = ShiftEntry.objects.filter(user=request.user).order_by("month", "day_num")
-    # Extract distinct months for the filter dropdown
-    unique_months = (
-        ShiftEntry.objects.filter(user=request.user)
-        .values_list("month", flat=True)
-        .distinct()
+    user_shifts = ShiftEntry.objects.filter(user=request.user)
+    months = list(user_shifts.values_list("month", flat=True).distinct())
+    months.sort(key=lambda month: datetime.strptime(month, "%B, %Y"))
+    month_order = Case(
+        *[When(month=month, then=Value(index)) for index, month in enumerate(months)],
+        default=Value(-1),
+        output_field=IntegerField(),
     )
+    shifts = user_shifts.annotate(month_order=month_order).order_by(
+        "-month_order", Cast("day_num", IntegerField()).desc()
+    )
+    # Extract distinct months for the filter dropdown
+    unique_months = user_shifts.values_list("month", flat=True).distinct()
 
     return render(
         request,

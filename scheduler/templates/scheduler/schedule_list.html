@@ -18,16 +18,15 @@
             <div class="row g-3 align-items-center justify-content-between">
                 <div class="col-12 col-md-8">
                     <div class="row g-2">
-                        <!-- Search Input -->
+                        <!-- Start Date Filter -->
                         <div class="col-12 col-sm-5">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-                                <input type="text"
-                                       id="filter-search"
-                                       oninput="applyFilters()"
-                                       placeholder="Search date, day..."
-                                       class="form-control border-start-0 bg-light">
-                            </div>
+                            <label for="filter-start-date" class="form-label small mb-1">Start date</label>
+                            <input type="date"
+                                   id="filter-start-date"
+                                   oninput="applyFilters()"
+                                   class="form-control form-control-sm bg-light"
+                                   aria-describedby="start-date-help">
+                            <div id="start-date-help" class="form-text">Show this date and later.</div>
                         </div>
                         <!-- Month Filter -->
                         <div class="col-12 col-sm-4">
@@ -76,8 +75,8 @@
                     {% for s in shifts %}
                         <tr class="shift-row"
                             data-month="{{ s.month }}"
-                            data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}"
-                            data-search="{{ s.month|lower }} {{ s.date_str|lower }}">
+                            data-date="{{ s.schedule_date|date:'Y-m-d' }}"
+                            data-status="{% if s.is_off %}OFF{% else %}SCHEDULED{% endif %}">
                             <td class="py-3 ps-3 fw-semibold text-dark">{{ s.month }}</td>
                             <td class="py-3 fw-bold text-secondary">{{ s.date_str }}</td>
                             <td class="py-3">
@@ -117,7 +116,7 @@
     });
 
     function applyFilters() {
-        const searchQuery = document.getElementById('filter-search').value.toLowerCase().trim();
+        const startDate = document.getElementById('filter-start-date').value;
         const selectedMonth = document.getElementById('filter-month').value;
         const selectedStatus = document.getElementById('filter-status').value;
 
@@ -126,14 +125,14 @@
 
         rows.forEach(row => {
             const month = row.getAttribute('data-month');
+            const date = row.getAttribute('data-date');
             const status = row.getAttribute('data-status');
-            const searchData = row.getAttribute('data-search');
 
-            let matchesSearch = searchData.includes(searchQuery);
+            let matchesStartDate = !startDate || date >= startDate;
             let matchesMonth = (selectedMonth === 'ALL' || month === selectedMonth);
             let matchesStatus = (selectedStatus === 'ALL' || status === selectedStatus);
 
-            if (matchesSearch && matchesMonth && matchesStatus) {
+            if (matchesStartDate && matchesMonth && matchesStatus) {
                 row.style.display = '';
                 visibleCount++;
             } else {
