@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.contrib.auth.models import User
 from django.db import models
 
@@ -68,8 +70,20 @@ class ShiftEntry(models.Model):
     in_progress = models.IntegerField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = (
+            models.UniqueConstraint(
+                fields=("user", "month", "day_num"),
+                name="unique_user_schedule_day",
+            ),
+        )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @property
+    def schedule_date(self):
+        return datetime.strptime(f"{self.day_num} {self.month}", "%d %B, %Y").date()
 
     def __str__(self):
         status = "Off" if self.is_off else f"{self.gross_hours} hrs"

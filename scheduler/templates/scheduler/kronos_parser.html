@@ -326,89 +326,16 @@
 {% block extra_js %}
     <script>
     // Sample Initial Raw Data
-    const SAMPLE_RAW_DATA = `October, 2026
-01 Thursday
-10:00 AM - 7:00 PM [9.00]
-10:00 AM - 2:30 PM [4.50]
-2:30 PM - 3:30 PM [1.00] Break
-3:30 PM - 7:00 PM [3.50]
-04 Sunday
-8:00 AM - 2:00 PM [6.00]
-8:00 AM - 11:00 AM [3.00]
-11:00 AM - 11:30 AM [0.50] Break
-11:30 AM - 2:00 PM [2.50]
-05 Monday
+    const SAMPLE_RAW_DATA = `26 Monday
 10:00 AM - 2:00 PM [4.00]
-07 Wednesday
-12:00 PM - 5:00 PM [5.00]
-08 Thursday
-12:00 PM - 8:00 PM [8.00]
-12:00 PM - 4:30 PM [4.50]
-4:30 PM - 5:30 PM [1.00] Break
-5:30 PM - 8:00 PM [2.50]
-11 Sunday
-8:00 AM - 4:00 PM [8.00]
-8:00 AM - 12:30 PM [4.50]
-12:30 PM - 1:30 PM [1.00] Break
-1:30 PM - 4:00 PM [2.50]
-12 Monday
-3:00 PM - 10:00 PM [7.00]
-3:00 PM - 7:30 PM [4.50]
-7:30 PM - 8:30 PM [1.00] Break
-8:30 PM - 10:00 PM [1.50]
-14 Wednesday
-10:00 AM - 5:00 PM [7.00]
-10:00 AM - 2:30 PM [4.50]
-2:30 PM - 3:30 PM [1.00] Break
-3:30 PM - 5:00 PM [1.50]
-15 Thursday
-3:00 PM - 10:00 PM [7.00]
-3:00 PM - 7:30 PM [4.50]
-7:30 PM - 8:30 PM [1.00] Break
-8:30 PM - 10:00 PM [1.50]
-17 Saturday
-12:00 PM - 5:00 PM [5.00]
-18 Sunday
-8:00 AM - 5:00 PM [9.00]
-8:00 AM - 12:30 PM [4.50]
-12:30 PM - 1:30 PM [1.00] Break
-1:30 PM - 5:00 PM [3.50]
-19 Monday
-6:00 AM - 2:00 PM [8.00]
-6:00 AM - 10:30 AM [4.50]
-10:30 AM - 11:30 AM [1.00] Break
-11:30 AM - 2:00 PM [2.50]
-22 Thursday
-6:00 PM - 10:00 PM [4.00]
-24 Saturday
--
-Approved [60]
-In Progress [1]
-25 Sunday
--
-Approved [49]
-In Progress [1]
-3:00 PM - 9:00 PM [6.00]
-3:00 PM - 6:00 PM [3.00]
-6:00 PM - 6:30 PM [0.50] Break
-6:30 PM - 9:00 PM [2.50]
-26 Monday
--
-Approved [39]
-In Progress [1]
-10:00 AM - 2:00 PM [4.00]
-27 Tuesday
--
-Approved [26]
-In Progress [0]
 28 Wednesday
 -
-Approved [35]
-In Progress [0]
+Approved [36]
+In Progress [2]
 6:00 AM - 11:00 AM [5.00]
 29 Thursday
 -
-Approved [44]
+Approved [46]
 In Progress [0]
 3:00 PM - 10:00 PM [7.00]
 3:00 PM - 7:30 PM [4.50]
@@ -427,16 +354,16 @@ November, 2026
 -
 Approved [56]
 In Progress [0]
-7:30 AM - 12:00 PM [4.50]
+8:00 AM - 12:00 PM [4.00]
 02 Monday
 -
 Approved [38]
-In Progress [2]
+In Progress [1]
 10:00 AM - 2:00 PM [4.00]
 03 Tuesday
 -
-Approved [36]
-In Progress [0]
+Approved [35]
+In Progress [1]
 10:00 AM - 5:00 PM [7.00]
 10:00 AM - 2:30 PM [4.50]
 2:30 PM - 3:30 PM [1.00] Break
@@ -451,7 +378,7 @@ In Progress [0]
 3:30 PM - 5:00 PM [1.50]
 05 Thursday
 -
-Approved [41]
+Approved [40]
 In Progress [0]
 6:00 PM - 10:00 PM [4.00]
 06 Friday
@@ -481,7 +408,15 @@ Approved [48]`;
         const rawText = document.getElementById('raw-text-input').value;
         const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-        let currentMonth = "Unknown Month";
+        const firstMonthIndex = lines.findIndex(line => PATTERNS.monthHeader.test(line));
+        const firstMonthMatch = firstMonthIndex >= 0
+            ? lines[firstMonthIndex].match(PATTERNS.monthHeader)
+            : null;
+        const hasUnlabeledDates = firstMonthIndex > 0 &&
+            lines.slice(0, firstMonthIndex).some(line => PATTERNS.dateHeader.test(line));
+        let currentMonth = firstMonthMatch && hasUnlabeledDates
+            ? previousMonthLabel(firstMonthMatch[1])
+            : (firstMonthMatch ? firstMonthMatch[1] : "Unknown Month");
         let shifts = [];
         let currentShift = null;
 
@@ -556,11 +491,31 @@ Approved [48]`;
 
         if (currentShift) shifts.push(currentShift);
 
+        shifts.forEach(shift => {
+            shift.isOff = !shift.overallTime;
+        });
         parsedShifts = shifts;
         updateMonthFilterDropdown();
         renderDashboard();
         generateCleanText();
         showToast('Schedule parsed successfully!');
+    }
+
+    function previousMonthLabel(monthLabel) {
+        const match = monthLabel.match(/^([A-Za-z]+),\s*(\d{4})$/);
+        const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        if (!match) return "Unknown Month";
+
+        const monthIndex = monthNames.findIndex(
+            month => month.toLowerCase() === match[1].toLowerCase()
+        );
+        if (monthIndex < 0) return "Unknown Month";
+
+        const previousMonth = new Date(Date.UTC(Number(match[2]), monthIndex - 1, 1));
+        return `${monthNames[previousMonth.getUTCMonth()]}, ${previousMonth.getUTCFullYear()}`;
     }
 
     function renderDashboard() {
