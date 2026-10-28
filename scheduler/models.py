@@ -1,28 +1,46 @@
 from datetime import datetime
+from decimal import Decimal
 
-from django.contrib.auth.models import User
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
 class ScheduleImport(models.Model):
     """Tracks every raw upload or paste from Kronos to maintain schedule history."""
 
-    uploaded_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="schedule_imports",
+    )
     raw_text = models.TextField(help_text="Raw Kronos text or JSON pasted.")
-    schedule_period = models.CharField(max_length=100, blank=True)
+    schedule_period = models.CharField(max_length=100, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ("-created_at",)
+
     def __str__(self):
-        return f"Import by {self.uploaded_by} on {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+        return (
+            f"Import by {self.uploaded_by} "
+            f"on {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+        )
 
 
 class Shift(models.Model):
     schedule_import = models.ForeignKey(
-        ScheduleImport, on_delete=models.CASCADE, related_name="shifts"
+        ScheduleImport,
+        on_delete=models.CASCADE,
+        related_name="shifts",
     )
     date = models.DateField()
     day_of_week = models.CharField(max_length=20)
-    total_hours = models.DecimalField(max_digits=4, decimal_places=2)
+    total_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
     is_active = models.BooleanField(
         default=True,
         help_text=(
@@ -31,41 +49,77 @@ class Shift(models.Model):
     )
 
     class Meta:
-        # Use tuple to satisfy Ruff RUF012 (immutable)
         ordering = ("date",)
+        constraints = (
+            models.UniqueConstraint(
+                fields=("schedule_import", "date"),
+                name="unique_schedule_import_date",
+            ),
+        )
 
     def __str__(self):
         return f"{self.date} ({self.total_hours} hrs)"
 
 
 class ShiftSegment(models.Model):
-    # Use tuples for choices to satisfy Ruff RUF012
     SEGMENT_TYPES = (
         ("work", "Work"),
         ("break", "Break"),
     )
+
     shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name="segments")
     segment_type = models.CharField(max_length=10, choices=SEGMENT_TYPES)
     start_time = models.TimeField()
     end_time = models.TimeField()
-    hours = models.DecimalField(max_digits=4, decimal_places=2)
+    hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+
+    class Meta:
+        constraints = (
+            models.CheckConstraint(
+                condition=models.Q(start_time__lt=models.F("end_time")),
+                name="shift_segment_start_before_end",
+            ),
+        )
+
+    def clean(self):
+        super().clean()
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            raise ValidationError("End time must be later than start time.")
 
     def __str__(self):
         return f"{self.segment_type.capitalize()}: {self.start_time} - {self.end_time}"
 
 
 class ShiftEntry(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
-    month = models.CharField(max_length=50)  # e.g., "October, 2026"
-    date_str = models.CharField(max_length=50)  # e.g., "01 Thursday"
-    day_num = models.CharField(max_length=10)  # e.g., "01"
-    day_name = models.CharField(max_length=20)  # e.g., "Thursday"
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="shift_entries",
+    )
+    month = models.CharField(max_length=50)
+    date_str = models.CharField(max_length=50, blank=True, default="")
+    day_num = models.CharField(max_length=10)
+    day_name = models.CharField(max_length=20)
     is_off = models.BooleanField(default=False)
     overall_time = models.CharField(max_length=50, blank=True, null=True)
-    gross_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    gross_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
     break_time = models.CharField(max_length=50, blank=True, null=True)
-    break_hours = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
-    segments = models.JSONField(default=list)  # Stores individual work intervals
+    break_hours = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    segments = models.JSONField(default=list, blank=True)
     approved = models.IntegerField(blank=True, null=True)
     in_progress = models.IntegerField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -77,13 +131,14 @@ class ShiftEntry(models.Model):
                 name="unique_user_schedule_day",
             ),
         )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        ordering = ("month", "day_num")
 
     @property
     def schedule_date(self):
-        return datetime.strptime(f"{self.day_num} {self.month}", "%d %B, %Y").date()
+        try:
+            return datetime.strptime(f"{self.day_num} {self.month}", "%d %B, %Y").date()
+        except (TypeError, ValueError):
+            return None
 
     def __str__(self):
         status = "Off" if self.is_off else f"{self.gross_hours} hrs"
