@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from django.contrib.auth.models import User
+from django.conf import settings
 from django.db import models
 
 
 class ScheduleImport(models.Model):
     """Tracks every raw upload or paste from Kronos to maintain schedule history."""
 
-    uploaded_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     raw_text = models.TextField(help_text="Raw Kronos text or JSON pasted.")
     schedule_period = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -55,7 +55,9 @@ class ShiftSegment(models.Model):
 
 
 class ShiftEntry(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True
+    )
     month = models.CharField(max_length=50)  # e.g., "October, 2026"
     date_str = models.CharField(max_length=50)  # e.g., "01 Thursday"
     day_num = models.CharField(max_length=10)  # e.g., "01"
