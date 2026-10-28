@@ -1,4 +1,3 @@
-from datetime import datetime
 from decimal import Decimal
 
 from django.conf import settings
@@ -102,10 +101,7 @@ class ShiftEntry(models.Model):
         blank=True,
         related_name="shift_entries",
     )
-    month = models.CharField(max_length=50)
-    date_str = models.CharField(max_length=50, blank=True, default="")
-    day_num = models.CharField(max_length=10)
-    day_name = models.CharField(max_length=20)
+    date = models.DateField()
     is_off = models.BooleanField(default=False)
     overall_time = models.CharField(max_length=50, blank=True, null=True)
     gross_hours = models.DecimalField(
@@ -127,19 +123,12 @@ class ShiftEntry(models.Model):
     class Meta:
         constraints = (
             models.UniqueConstraint(
-                fields=("user", "month", "day_num"),
-                name="unique_user_schedule_day",
+                fields=("user", "date"),
+                name="unique_user_schedule_date",
             ),
         )
-        ordering = ("month", "day_num")
-
-    @property
-    def schedule_date(self):
-        try:
-            return datetime.strptime(f"{self.day_num} {self.month}", "%d %B, %Y").date()
-        except (TypeError, ValueError):
-            return None
+        ordering = ("date",)
 
     def __str__(self):
         status = "Off" if self.is_off else f"{self.gross_hours} hrs"
-        return f"{self.month} - {self.date_str} ({status})"
+        return f"{self.date} ({status})"

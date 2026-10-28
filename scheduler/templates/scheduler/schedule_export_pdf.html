@@ -50,7 +50,7 @@
             <tbody>
                 {% for shift in shifts %}
                     <tr>
-                        <td>{{ shift.schedule_date|date:"l, F j, Y" }}</td>
+                        <td>{{ shift.date|date:"l, F j, Y" }}</td>
                         <td>{{ shift.overall_time|default:"-" }}</td>
                         <td>{{ shift.gross_hours }} hrs</td>
                         <td>

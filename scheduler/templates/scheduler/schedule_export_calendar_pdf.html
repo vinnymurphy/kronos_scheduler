@@ -93,15 +93,11 @@
                                     {% endif %}
                                     <div class="date-number">{{ day.date|date:"j" }}</div>
                                     {% for shift in day.shifts %}
-                                        <div class="shift{% if shift.is_off %} off{% endif %}">
-                                            {% if shift.overall_time %}
-                                                {{ shift.overall_time }} · {{ shift.gross_hours }} hrs
-                                            {% else %}
-                                                Off / None
+                                        {% if shift.overall_time %}
+                                            <div class="shift">{{ shift.overall_time }} · {{ shift.gross_hours }} hrs</div>
+                                            {% if shift.break_time %}
+                                                <div class="break">Break: {{ shift.break_time }} ({{ shift.break_hours }} hrs)</div>
                                             {% endif %}
-                                        </div>
-                                        {% if shift.break_time %}
-                                            <div class="break">Break: {{ shift.break_time }} ({{ shift.break_hours }} hrs)</div>
                                         {% endif %}
                                     {% endfor %}
                                 {% endif %}

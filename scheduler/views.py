@@ -4,8 +4,6 @@ from datetime import datetime, timedelta
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
-from django.db.models import Case, IntegerField, Value, When
-from django.db.models.functions import Cast
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
@@ -69,14 +67,27 @@ def save_shifts_api(request):
             # ShiftEntry.objects.filter(user=request.user).delete()
 
             with transaction.atomic():
+                saved_dates = set()
                 for s in shifts_data:
+                    date_value = s.get("date")
+                    if date_value:
+                        shift_date = parse_date(date_value)
+                        if shift_date is None:
+                            raise ValueError("Shift date must use YYYY-MM-DD format.")
+                    else:
+                        try:
+                            shift_date = datetime.strptime(
+                                f"{s['dayNum']} {s['month']}", "%d %B, %Y"
+                            ).date()
+                        except KeyError as error:
+                            raise ValueError(
+                                "Each shift must include a date or month and dayNum."
+                            ) from error
+
                     ShiftEntry.objects.update_or_create(
                         user=request.user,
-                        month=s.get("month"),
-                        day_num=s.get("dayNum"),
+                        date=shift_date,
                         defaults={
-                            "date_str": s.get("dateStr"),
-                            "day_name": s.get("dayName"),
                             "is_off": s.get("isOff", False),
                             "overall_time": s.get("overallTime", ""),
                             "gross_hours": s.get("grossHours", 0),
@@ -87,9 +98,8 @@ def save_shifts_api(request):
                             "in_progress": s.get("inProgress"),
                         },
                     )
-                saved_count = len(
-                    {(s.get("month"), s.get("dayNum")) for s in shifts_data}
-                )
+                    saved_dates.add(shift_date)
+                saved_count = len(saved_dates)
 
             return JsonResponse(
                 {
@@ -115,8 +125,15 @@ def save_shifts_api(request):
 def schedule_list_view(request):
     user_shifts = ShiftEntry.objects.filter(user=request.user)
     shifts = get_schedule_shifts(request.user)
-    # Extract distinct months for the filter dropdown
-    unique_months = user_shifts.values_list("month", flat=True).distinct()
+    unique_months = {
+        schedule_date.strftime("%B, %Y")
+        for schedule_date in user_shifts.values_list("date", flat=True).distinct()
+    }
+    unique_months = sorted(
+        unique_months,
+        key=lambda month: datetime.strptime(month, "%B, %Y"),
+        reverse=True,
+    )
 
     return render(
         request,
@@ -146,23 +163,23 @@ def schedule_export_pdf_view(request):
     all_shifts = list(get_schedule_shifts(request.user))
     shifts = all_shifts.copy()
     if start_date:
-        shifts = [shift for shift in shifts if shift.schedule_date >= start_date]
+        shifts = [shift for shift in shifts if shift.date >= start_date]
     if month != "ALL":
-        shifts = [shift for shift in shifts if shift.month == month]
+        shifts = [shift for shift in shifts if shift.date.strftime("%B, %Y") == month]
     if status == "SCHEDULED":
         shifts = [shift for shift in shifts if not shift.is_off]
     elif status == "OFF":
         shifts = [shift for shift in shifts if shift.is_off]
     shifts.sort(
-        key=lambda shift: shift.schedule_date,
+        key=lambda shift: shift.date,
         reverse=sort_direction == "descending",
     )
 
     if view == "calendar":
         range_start = start_date or min(
-            (shift.schedule_date for shift in all_shifts), default=None
+            (shift.date for shift in all_shifts), default=None
         )
-        range_end = max((shift.schedule_date for shift in all_shifts), default=None)
+        range_end = max((shift.date for shift in all_shifts), default=None)
         calendar_weeks = build_calendar_weeks(shifts, range_start, range_end)
         template_name = "scheduler/schedule_export_calendar_pdf.html"
         context = {"calendar_weeks": calendar_weeks}
@@ -190,7 +207,7 @@ def build_calendar_weeks(shifts, range_start, range_end):
 
     shifts_by_date = {}
     for shift in shifts:
-        shifts_by_date.setdefault(shift.schedule_date, []).append(shift)
+        shifts_by_date.setdefault(shift.date, []).append(shift)
 
     calendar_start = range_start - timedelta(days=(range_start.weekday() + 2) % 7)
     calendar_end = range_end + timedelta(days=(4 - range_end.weekday()) % 7)
@@ -213,14 +230,4 @@ def build_calendar_weeks(shifts, range_start, range_end):
 
 
 def get_schedule_shifts(user):
-    user_shifts = ShiftEntry.objects.filter(user=user)
-    months = list(user_shifts.values_list("month", flat=True).distinct())
-    months.sort(key=lambda month: datetime.strptime(month, "%B, %Y"))
-    month_order = Case(
-        *[When(month=month, then=Value(index)) for index, month in enumerate(months)],
-        default=Value(-1),
-        output_field=IntegerField(),
-    )
-    return user_shifts.annotate(month_order=month_order).order_by(
-        "-month_order", Cast("day_num", IntegerField()).desc()
-    )
+    return ShiftEntry.objects.filter(user=user).order_by("-date")
