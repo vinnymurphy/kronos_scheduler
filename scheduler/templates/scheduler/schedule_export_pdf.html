@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <style>
+            @page {
+                size: letter landscape;
+                margin: 0.5in;
+            }
+
+            body {
+                color: #212529;
+                font-family: sans-serif;
+                font-size: 10pt;
+            }
+
+            table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+
+            th,
+            td {
+                border: 1px solid #adb5bd;
+                padding: 8px;
+                text-align: left;
+            }
+
+            th {
+                background: #212529;
+                color: white;
+            }
+
+            tr {
+                page-break-inside: avoid;
+            }
+        </style>
+    </head>
+    <body>
+        <table>
+            <thead>
+                <tr>
+                    <th>Day and date</th>
+                    <th>Shift time</th>
+                    <th>Gross hours</th>
+                    <th>Break time</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for shift in shifts %}
+                    <tr>
+                        <td>{{ shift.schedule_date|date:"l, F j, Y" }}</td>
+                        <td>{{ shift.overall_time|default:"-" }}</td>
+                        <td>{{ shift.gross_hours }} hrs</td>
+                        <td>
+                            {% if shift.break_time %}
+                                {{ shift.break_time }} ({{ shift.break_hours }} hrs)
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{% if shift.is_off %}Off / None{% else %}Scheduled{% endif %}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5">No saved shifts found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+</html>
