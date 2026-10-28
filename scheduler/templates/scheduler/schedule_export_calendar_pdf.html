@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <style>
+            @page {
+                size: letter landscape;
+                margin: 0.4in;
+            }
+
+            body {
+                color: #212529;
+                font-family: sans-serif;
+                font-size: 8pt;
+            }
+
+            table {
+                border-collapse: collapse;
+                table-layout: fixed;
+                width: 100%;
+            }
+
+            th,
+            td {
+                border: 1px solid #adb5bd;
+                padding: 4px;
+                vertical-align: top;
+                width: 14.28%;
+            }
+
+            th {
+                background: #212529;
+                color: white;
+                text-align: center;
+            }
+
+            td {
+                height: 0.8in;
+            }
+
+            .outside-range {
+                background: #f1f3f5;
+            }
+
+            .date-number {
+                font-weight: bold;
+            }
+
+            .month-label {
+                color: #0d6efd;
+                font-weight: bold;
+            }
+
+            .shift {
+                margin-top: 4px;
+            }
+
+            .off {
+                color: #6c757d;
+            }
+
+            .break {
+                color: #997404;
+                font-size: 7pt;
+            }
+
+            tr {
+                page-break-inside: avoid;
+            }
+        </style>
+    </head>
+    <body>
+        <table>
+            <thead>
+                <tr>
+                    <th>Saturday</th>
+                    <th>Sunday</th>
+                    <th>Monday</th>
+                    <th>Tuesday</th>
+                    <th>Wednesday</th>
+                    <th>Thursday</th>
+                    <th>Friday</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in calendar_weeks %}
+                    <tr>
+                        {% for day in week %}
+                            <td{% if not day.in_range %} class="outside-range"{% endif %}>
+                                {% if day.in_range %}
+                                    {% if day.month_label %}
+                                        <div class="month-label">{{ day.date|date:"F Y" }}</div>
+                                    {% endif %}
+                                    <div class="date-number">{{ day.date|date:"j" }}</div>
+                                    {% for shift in day.shifts %}
+                                        <div class="shift{% if shift.is_off %} off{% endif %}">
+                                            {% if shift.overall_time %}
+                                                {{ shift.overall_time }} · {{ shift.gross_hours }} hrs
+                                            {% else %}
+                                                Off / None
+                                            {% endif %}
+                                        </div>
+                                        {% if shift.break_time %}
+                                            <div class="break">Break: {{ shift.break_time }} ({{ shift.break_hours }} hrs)</div>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="7">No saved shifts found.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
+</html>
