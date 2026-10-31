@@ -6,7 +6,160 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import ShiftEntry
+from .models import ScheduleImport, Shift, ShiftEntry
+
+
+class KronosTextUploadTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="scheduler")
+        self.client.force_login(self.user)
+
+    def test_importing_raw_kronos_text_creates_shifts_and_segments(self):
+        raw_text = (
+            "October, 2026\n"
+            "26 Monday\n"
+            "10:00 AM - 5:00 PM [7.00]\n"
+            "10:00 AM - 2:30 PM [4.50]\n"
+            "2:30 PM - 3:30 PM [1.00] Break\n"
+            "3:30 PM - 5:00 PM [1.50]\n"
+            "27 Tuesday\n"
+            "-\n"
+            "Approved [38]\n"
+        )
+
+        response = self.client.post(
+            reverse("schedule_upload"),
+            {"raw_text": raw_text},
+        )
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        import_record = ScheduleImport.objects.get(uploaded_by=self.user)
+        self.assertEqual(import_record.raw_text, raw_text)
+        self.assertEqual(import_record.schedule_period, "October, 2026")
+
+        shifts = list(
+            Shift.objects.filter(schedule_import=import_record).order_by("date")
+        )
+        self.assertEqual(
+            [shift.date.isoformat() for shift in shifts],
+            ["2026-10-26", "2026-10-27"],
+        )
+        self.assertEqual(shifts[0].total_hours, 7)
+        self.assertEqual(shifts[0].segments.count(), 3)
+        self.assertEqual(
+            list(shifts[0].segments.values_list("segment_type", flat=True)),
+            ["work", "break", "work"],
+        )
+        self.assertEqual(shifts[1].total_hours, 0)
+        self.assertFalse(shifts[1].segments.exists())
+
+        visible_shift = ShiftEntry.objects.get(
+            user=self.user, date="2026-10-26"
+        )
+        self.assertEqual(visible_shift.overall_time, "10:00 AM - 5:00 PM")
+        self.assertEqual(visible_shift.gross_hours, 7)
+        self.assertEqual(visible_shift.break_time, "2:30 PM - 3:30 PM")
+        self.assertEqual(visible_shift.break_hours, 1)
+        self.assertEqual(
+            visible_shift.segments,
+            [
+                "10:00 AM - 2:30 PM [4.50]",
+                "2:30 PM - 3:30 PM [1.00]",
+                "3:30 PM - 5:00 PM [1.50]",
+            ],
+        )
+        self.assertTrue(
+            ShiftEntry.objects.get(user=self.user, date="2026-10-27").is_off
+        )
+
+    def test_pasting_schedule_updates_existing_entries_only_for_that_user(self):
+        date = datetime.strptime("09 November, 2026", "%d %B, %Y").date()
+        ShiftEntry.objects.create(
+            user=self.user,
+            date=date,
+            overall_time="Old shift",
+            gross_hours=2,
+        )
+        previous_import = ScheduleImport.objects.create(
+            uploaded_by=self.user,
+            raw_text="Previous schedule",
+            schedule_period="November, 2026",
+        )
+        previous_shift = Shift.objects.create(
+            schedule_import=previous_import,
+            date=date,
+            total_hours=2,
+            is_active=True,
+        )
+        other_user = User.objects.create_user(username="another-scheduler")
+        other_import = ScheduleImport.objects.create(
+            uploaded_by=other_user,
+            raw_text="Old schedule",
+            schedule_period="November, 2026",
+        )
+        other_shift = Shift.objects.create(
+            schedule_import=other_import,
+            date=date,
+            total_hours=2,
+            is_active=True,
+        )
+        raw_text = (
+            "November, 2026\n"
+            "09 Monday\n"
+            "-\n"
+            "Approved [47]\n"
+            "In Progress [1]\n"
+            "3:00 PM - 9:00 PM [6.00]\n"
+            "3:00 PM - 6:00 PM [3.00]\n"
+            "6:00 PM - 6:30 PM [0.50] Break\n"
+            "6:30 PM - 9:00 PM [2.50]\n"
+        )
+
+        response = self.client.post(
+            reverse("schedule_upload"),
+            {"raw_text": raw_text},
+        )
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        self.assertEqual(ShiftEntry.objects.filter(user=self.user).count(), 1)
+        visible_shift = ShiftEntry.objects.get(user=self.user, date=date)
+        self.assertEqual(visible_shift.overall_time, "3:00 PM - 9:00 PM")
+        self.assertEqual(visible_shift.gross_hours, 6)
+        self.assertEqual(visible_shift.break_time, "6:00 PM - 6:30 PM")
+        self.assertEqual(visible_shift.break_hours, 0.5)
+        previous_shift.refresh_from_db()
+        self.assertFalse(previous_shift.is_active)
+        other_shift.refresh_from_db()
+        self.assertTrue(other_shift.is_active)
+
+        response = self.client.get(reverse("schedule_list"))
+        self.assertContains(response, "3:00 PM - 9:00 PM")
+
+    def test_raw_text_before_first_month_header_uses_previous_month(self):
+        raw_text = "31 Saturday\n-\nNovember, 2026\n01 Sunday\n-\n"
+
+        response = self.client.post(reverse("schedule_upload"), {"raw_text": raw_text})
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        dates = list(Shift.objects.order_by("date").values_list("date", flat=True))
+        self.assertEqual(
+            [shift_date.isoformat() for shift_date in dates],
+            ["2026-10-31", "2026-11-01"],
+        )
+        self.assertEqual(
+            ScheduleImport.objects.get(uploaded_by=self.user).schedule_period,
+            "October, 2026 - November, 2026",
+        )
+
+    def test_invalid_raw_text_is_reported_without_creating_import(self):
+        response = self.client.post(
+            reverse("schedule_upload"),
+            {"raw_text": "This is not a Kronos schedule"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No month and year header found")
+        self.assertFalse(ScheduleImport.objects.exists())
 
 
 class SaveShiftsApiTests(TestCase):
