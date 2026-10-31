@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django.db import transaction
 
-from .models import ScheduleImport, Shift, ShiftSegment
+from .models import ScheduleImport, Shift, ShiftEntry, ShiftSegment
 
 
 def parse_time_str(time_str: str) -> time:
@@ -14,7 +14,7 @@ def parse_time_str(time_str: str) -> time:
 
 
 @transaction.atomic
-def import_schedule_json(user, json_data_or_string):
+def import_schedule_json(user, json_data_or_string, *, raw_text=None):
     """Ingests Kronos schedule data (either as a dict or JSON string),
 
     logs the import history, deactivates older overlapping shifts,
@@ -22,10 +22,10 @@ def import_schedule_json(user, json_data_or_string):
     """
     if isinstance(json_data_or_string, str):
         data = json.loads(json_data_or_string)
-        raw_text_storage = json_data_or_string
+        raw_text_storage = raw_text or json_data_or_string
     else:
         data = json_data_or_string
-        raw_text_storage = json.dumps(data, indent=2)
+        raw_text_storage = raw_text or json.dumps(data, indent=2)
 
     schedule_period = data.get("schedule_period", "")
 
@@ -49,9 +49,11 @@ def import_schedule_json(user, json_data_or_string):
     # This ensures your active calendar view only shows the latest
     # updated schedule while past uploads remain saved in
     # ScheduleImport for audit history.
-    Shift.objects.filter(date__in=incoming_dates, is_active=True).update(
-        is_active=False
-    )
+    Shift.objects.filter(
+        schedule_import__uploaded_by=user,
+        date__in=incoming_dates,
+        is_active=True,
+    ).update(is_active=False)
 
     # 3. Create the new active shifts and child segments
     for shift_item in shifts_list:
@@ -73,5 +75,35 @@ def import_schedule_json(user, json_data_or_string):
                 end_time=parse_time_str(seg["end"]),
                 hours=Decimal(str(seg["hours"])),
             )
+
+        segments = shift_item["segments"]
+        breaks = [segment for segment in segments if segment["type"] == "break"]
+        break_hours = sum(
+            (Decimal(str(segment["hours"])) for segment in breaks),
+            Decimal("0.00"),
+        )
+        overall_time = (
+            f"{segments[0]['start']} - {segments[-1]['end']}" if segments else ""
+        )
+        break_time = (
+            f"{breaks[0]['start']} - {breaks[0]['end']}" if breaks else ""
+        )
+        segment_summaries = [
+            f"{segment['start']} - {segment['end']} "
+            f"[{Decimal(str(segment['hours'])):.2f}]"
+            for segment in segments
+        ]
+        ShiftEntry.objects.update_or_create(
+            user=user,
+            date=shift_date,
+            defaults={
+                "is_off": not segments,
+                "gross_hours": Decimal(str(shift_item["total_hours"])),
+                "break_hours": break_hours,
+                "overall_time": overall_time,
+                "break_time": break_time,
+                "segments": segment_summaries,
+            },
+        )
 
     return import_record

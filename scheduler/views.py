@@ -13,6 +13,7 @@ from weasyprint import HTML
 
 from .forms import ScheduleUploadForm
 from .models import ShiftEntry
+from .parsers import parse_kronos_schedule
 from .services import import_schedule_json
 
 
@@ -22,6 +23,7 @@ def schedule_upload_view(request):
         form = ScheduleUploadForm(request.POST, request.FILES)
         if form.is_valid():
             json_data = None
+            raw_text = None
 
             # Check if a JSON file was uploaded
             json_file = request.FILES.get("json_file")
@@ -34,17 +36,26 @@ def schedule_upload_view(request):
             # Otherwise, check if raw text was pasted
             elif form.cleaned_data.get("raw_text"):
                 raw_input = form.cleaned_data["raw_text"]
+                raw_text = raw_input
                 try:
                     json_data = json.loads(raw_input)
-                except json.JSONDecodeError as e:
-                    form.add_error(
-                        "raw_text",
-                        f"Invalid JSON format in text paste. Please provide valid JSON: {e}",
-                    )
+                except json.JSONDecodeError:
+                    try:
+                        json_data = parse_kronos_schedule(raw_input)
+                    except ValueError as error:
+                        form.add_error("raw_text", str(error))
 
-            if json_data and not form.errors:
-                import_schedule_json(request.user, json_data)
-                return redirect("schedule_list")
+            if json_data is not None and not form.errors:
+                if not isinstance(json_data, dict):
+                    field = "json_file" if json_file else "raw_text"
+                    form.add_error(field, "Schedule data must be a JSON object.")
+                elif json_data:
+                    import_schedule_json(
+                        request.user,
+                        json_data,
+                        raw_text=raw_text,
+                    )
+                    return redirect("schedule_list")
     else:
         form = ScheduleUploadForm()
 
