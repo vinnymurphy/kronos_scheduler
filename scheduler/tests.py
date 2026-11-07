@@ -1,12 +1,123 @@
 import json
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import ScheduleImport, Shift, ShiftEntry
+from .models import ScheduleImport, Shift, ShiftEntry, WorkweekPreference
+from .parsers import parse_past_hours
+
+PAST_HOURS_SAMPLE = (
+    "11/1 7:55 am - 12:15 pm\n"
+    "11/2 9:54 am - 2:06 pm\n"
+    "11/3 9:57 - 2:41pm and 3:40-4:56 pm\n"
+    "11/4 9:53 - 3:02 pm and 3:29-4:59 pm\n"
+    "11/5 5:54-9:43pm"
+)
+
+
+class PastHoursTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="hours-scheduler")
+        self.client.force_login(self.user)
+
+    def test_parser_handles_inferred_meridiem_and_split_workdays(self):
+        shifts = parse_past_hours(PAST_HOURS_SAMPLE, default_year=2026)
+
+        self.assertEqual(len(shifts), 5)
+        self.assertEqual(shifts[2]["segments"][0]["start"], "9:57 AM")
+        self.assertEqual(shifts[2]["segments"][0]["end"], "2:41 PM")
+        self.assertEqual(shifts[2]["segments"][1]["start"], "3:40 PM")
+        self.assertEqual(shifts[4]["segments"][0]["start"], "5:54 PM")
+        self.assertEqual(
+            sum(shift["total_minutes"] for shift in shifts),
+            25 * 60,
+        )
+        semicolon_split = parse_past_hours(
+            "11/1 9:00am-10:00am;10:30am-11:00am",
+            default_year=2026,
+        )
+        self.assertEqual(semicolon_split[0]["total_minutes"], 90)
+
+    def test_parser_rejects_ambiguous_or_overlapping_ranges(self):
+        with self.assertRaisesMessage(ValueError, "Specify AM or PM"):
+            parse_past_hours("11/1 9:00 - 1:00", default_year=2026)
+        with self.assertRaisesMessage(ValueError, "Overlapping work intervals"):
+            parse_past_hours(
+                "11/1 9:00 am - 12:00 pm and 11:30 am - 1:00 pm",
+                default_year=2026,
+            )
+
+    def test_pasting_past_hours_saves_calculated_work_and_break_time(self):
+        response = self.client.post(
+            reverse("schedule_list"),
+            {
+                "action": "parse_past_hours",
+                "year": "2026",
+                "past_hours": PAST_HOURS_SAMPLE,
+            },
+        )
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        entries = list(ShiftEntry.objects.filter(user=self.user).order_by("date"))
+        self.assertEqual(len(entries), 5)
+        self.assertEqual(sum(entry.worked_minutes for entry in entries), 25 * 60)
+        self.assertEqual(
+            sum(
+                (entry.gross_hours - entry.break_hours for entry in entries),
+                Decimal("0.00"),
+            ),
+            Decimal("25.00"),
+        )
+        split_entry = entries[2]
+        self.assertEqual(split_entry.gross_hours, Decimal("6.98"))
+        self.assertEqual(split_entry.break_hours, Decimal("0.98"))
+        self.assertEqual(split_entry.worked_minutes, 6 * 60)
+        self.assertEqual(split_entry.break_time, "2:41 PM - 3:40 PM")
+        self.assertEqual(
+            split_entry.overall_time,
+            "9:57 AM - 2:41 PM; 3:40 PM - 4:56 PM",
+        )
+
+        page = self.client.get(reverse("schedule_list"))
+        self.assertContains(page, "Biweekly hours summary")
+        self.assertContains(page, 'data-week-start="sunday"')
+        self.assertContains(page, 'id="filter-end-date"')
+
+    def test_invalid_pasted_hours_are_not_saved_and_input_is_preserved(self):
+        invalid_input = "11/1 9:00 - 1:00"
+        response = self.client.post(
+            reverse("schedule_list"),
+            {
+                "action": "parse_past_hours",
+                "year": "2026",
+                "past_hours": invalid_input,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Specify AM or PM")
+        self.assertContains(response, invalid_input)
+        self.assertFalse(ShiftEntry.objects.filter(user=self.user).exists())
+
+    def test_workweek_start_preference_is_saved_and_used_by_schedule_view(self):
+        response = self.client.post(
+            reverse("schedule_list"),
+            {"action": "save_workweek_start", "week_start": "monday"},
+        )
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        self.assertEqual(
+            WorkweekPreference.objects.get(user=self.user).week_start,
+            WorkweekPreference.MONDAY,
+        )
+        self.assertContains(
+            self.client.get(reverse("schedule_list")),
+            'data-week-start="monday"',
+        )
 
 
 class KronosTextUploadTests(TestCase):
@@ -53,9 +164,7 @@ class KronosTextUploadTests(TestCase):
         self.assertEqual(shifts[1].total_hours, 0)
         self.assertFalse(shifts[1].segments.exists())
 
-        visible_shift = ShiftEntry.objects.get(
-            user=self.user, date="2026-10-26"
-        )
+        visible_shift = ShiftEntry.objects.get(user=self.user, date="2026-10-26")
         self.assertEqual(visible_shift.overall_time, "10:00 AM - 5:00 PM")
         self.assertEqual(visible_shift.gross_hours, 7)
         self.assertEqual(visible_shift.break_time, "2:30 PM - 3:30 PM")
@@ -79,6 +188,7 @@ class KronosTextUploadTests(TestCase):
             date=date,
             overall_time="Old shift",
             gross_hours=2,
+            worked_minutes=120,
         )
         previous_import = ScheduleImport.objects.create(
             uploaded_by=self.user,
@@ -127,6 +237,7 @@ class KronosTextUploadTests(TestCase):
         self.assertEqual(visible_shift.gross_hours, 6)
         self.assertEqual(visible_shift.break_time, "6:00 PM - 6:30 PM")
         self.assertEqual(visible_shift.break_hours, 0.5)
+        self.assertIsNone(visible_shift.worked_minutes)
         previous_shift.refresh_from_db()
         self.assertFalse(previous_shift.is_active)
         other_shift.refresh_from_db()
@@ -206,6 +317,12 @@ class SaveShiftsApiTests(TestCase):
         self.assertFalse(entry.is_off)
 
     def test_saving_shift_with_iso_date(self):
+        ShiftEntry.objects.create(
+            user=self.user,
+            date="2026-11-02",
+            gross_hours=4,
+            worked_minutes=240,
+        )
         response = self.client.post(
             reverse("save_shifts_api"),
             data=json.dumps(
@@ -223,9 +340,8 @@ class SaveShiftsApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            ShiftEntry.objects.filter(user=self.user, date="2026-11-02").exists()
-        )
+        entry = ShiftEntry.objects.get(user=self.user, date="2026-11-02")
+        self.assertIsNone(entry.worked_minutes)
 
 
 class ScheduleListOrderingTests(TestCase):
@@ -275,7 +391,10 @@ class ScheduleListOrderingTests(TestCase):
         self.assertContains(response, "function renderCalendar()")
         self.assertContains(response, "if (row.dataset.status === 'OFF') return;")
         self.assertNotContains(response, "Off / None ·")
-        self.assertContains(response, "const endDate = dates[dates.length - 1]")
+        self.assertContains(
+            response,
+            "const endDate = document.getElementById('filter-end-date').value || dates[dates.length - 1]",
+        )
         self.assertContains(response, "for (let date = start; date <= end;")
         self.assertContains(response, "container.appendChild(grid)")
         self.assertContains(
@@ -370,6 +489,29 @@ class ScheduleListOrderingTests(TestCase):
         self.assertEqual(
             {shift.date.strftime("%B, %Y") for shift in exported_shifts},
             {"November, 2026"},
+        )
+
+    @patch("scheduler.views.HTML")
+    @patch("scheduler.views.render_to_string", return_value="<table></table>")
+    def test_schedule_pdf_respects_end_date_filter(self, render_template, pdf_renderer):
+        for day in (1, 2, 3):
+            ShiftEntry.objects.create(
+                user=self.user,
+                date=datetime(2026, 11, day).date(),
+                gross_hours=4,
+            )
+        pdf_renderer.return_value.write_pdf.return_value = b"%PDF test"
+
+        response = self.client.get(
+            reverse("schedule_export_pdf"),
+            {"end_date": "2026-11-02"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        exported_shifts = render_template.call_args.args[1]["shifts"]
+        self.assertEqual(
+            [shift.date.day for shift in exported_shifts],
+            [2, 1],
         )
 
     @patch("scheduler.views.HTML")

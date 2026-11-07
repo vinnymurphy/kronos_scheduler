@@ -35,6 +35,11 @@
             font-weight: 700;
         }
 
+        .hours-summary-table th,
+        .hours-summary-table td {
+            white-space: nowrap;
+        }
+
         @media (max-width: 575.98px) {
             .calendar-day,
             .calendar-weekday {
@@ -67,6 +72,117 @@
             </div>
         </div>
     </div>
+    {% if messages %}
+        <div class="mb-3" aria-live="polite">
+            {% for message in messages %}
+                <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} py-2 mb-2"
+                     role="status">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white">
+            <h3 class="h5 mb-0">Add past work hours</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">
+                Enter one date per line, then one or more work ranges. Split ranges with
+                "and" or semicolons. If a date omits its year, the year below is used.
+                Saving replaces any existing entry on those dates.
+            </p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="parse_past_hours">
+                <div class="row g-3">
+                    <div class="col-12 col-md-2">
+                        <label for="past-hours-year" class="form-label">Default year</label>
+                        <input id="past-hours-year"
+                               class="form-control"
+                               type="number"
+                               name="year"
+                               min="1"
+                               max="9999"
+                               value="{{ past_hours_year }}"
+                               required>
+                    </div>
+                    <div class="col-12 col-md-10">
+                        <label for="past-hours-input" class="form-label">Dates and work ranges</label>
+                        <textarea id="past-hours-input"
+                                  class="form-control"
+                                  name="past_hours"
+                                  rows="4"
+                                  placeholder="11/1 7:55 am - 12:15 pm&#10;11/3 9:57 - 2:41pm and 3:40-4:56 pm"
+                                  required>{{ past_hours_input }}</textarea>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm mt-3" type="submit">Calculate and save hours</button>
+            </form>
+        </div>
+    </div>
+    <section id="biweekly-summary"
+             class="card shadow-sm border-0 mb-4"
+             data-week-start="{{ week_start }}"
+             aria-labelledby="biweekly-summary-title">
+        <div class="card-header bg-white d-flex flex-wrap gap-3 justify-content-between align-items-center">
+            <div>
+                <h3 id="biweekly-summary-title" class="h5 mb-1">Biweekly hours summary</h3>
+                <p id="summary-visible-range" class="text-muted small mb-0">Based on visible schedule entries</p>
+            </div>
+            <form method="post" class="d-flex gap-2 align-items-center">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="save_workweek_start">
+                <label for="workweek-start" class="form-label small mb-0">Workweek starts</label>
+                <select id="workweek-start"
+                        name="week_start"
+                        class="form-select form-select-sm">
+                    <option value="sunday" {% if week_start == "sunday" %}selected{% endif %}>Sunday</option>
+                    <option value="monday" {% if week_start == "monday" %}selected{% endif %}>Monday</option>
+                </select>
+                <button class="btn btn-outline-primary btn-sm" type="submit">Save</button>
+            </form>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted">
+                Worked hours exclude recorded breaks. Overtime is estimated as hours over 40
+                in each configured workweek; periods pair consecutive workweeks from the
+                first visible workweek. This is a planning estimate, not a payroll determination.
+            </p>
+            <div class="row g-3 mb-3">
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Visible worked hours</div>
+                        <div id="visible-hours-total" class="h4 mb-0">0h 00m</div>
+                    </div>
+                </div>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="border rounded p-3 h-100">
+                        <div class="small text-muted">Estimated weekly overtime</div>
+                        <div id="visible-overtime-total" class="h4 mb-0">0h 00m</div>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle hours-summary-table mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Two-week period</th>
+                            <th scope="col">Week 1 worked</th>
+                            <th scope="col">Week 1 OT</th>
+                            <th scope="col">Week 2 worked</th>
+                            <th scope="col">Week 2 OT</th>
+                            <th scope="col">Period worked</th>
+                            <th scope="col">Total OT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="biweekly-summary-body">
+                        <tr>
+                            <td colspan="7" class="text-muted">No visible shifts to summarize.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
     <!-- Filter & Search Controls Bar -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-body">
@@ -74,17 +190,24 @@
                 <div class="col-12 col-md-8">
                     <div class="row g-2">
                         <!-- Start Date Filter -->
-                        <div class="col-12 col-sm-5">
+                        <div class="col-12 col-sm-6 col-md-3">
                             <label for="filter-start-date" class="form-label small mb-1">Start date</label>
                             <input type="date"
                                    id="filter-start-date"
                                    oninput="applyFilters()"
                                    class="form-control form-control-sm bg-light"
                                    aria-describedby="start-date-help">
-                            <div id="start-date-help" class="form-text">Show this date and later.</div>
+                            <div id="start-date-help" class="form-text">Beginning of visible range.</div>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-3">
+                            <label for="filter-end-date" class="form-label small mb-1">End date</label>
+                            <input type="date"
+                                   id="filter-end-date"
+                                   oninput="applyFilters()"
+                                   class="form-control form-control-sm bg-light">
                         </div>
                         <!-- Month Filter -->
-                        <div class="col-12 col-sm-4">
+                        <div class="col-12 col-sm-6 col-md-3">
                             <select id="filter-month"
                                     onchange="applyFilters()"
                                     class="form-select form-select-sm bg-light">
@@ -95,7 +218,7 @@
                             </select>
                         </div>
                         <!-- Status Filter -->
-                        <div class="col-12 col-sm-3">
+                        <div class="col-12 col-sm-6 col-md-3">
                             <select id="filter-status"
                                     onchange="applyFilters()"
                                     class="form-select form-select-sm bg-light">
@@ -156,7 +279,8 @@
                             data-overall-time="{{ s.overall_time|default:'' }}"
                             data-gross-hours="{{ s.gross_hours }}"
                             data-break-time="{{ s.break_time|default:'' }}"
-                            data-break-hours="{{ s.break_hours }}">
+                            data-break-hours="{{ s.break_hours }}"
+                            data-worked-minutes="{{ s.worked_minutes|default_if_none:'' }}">
                             <td class="py-3 ps-3 fw-bold text-secondary">{{ s.date|date:"l, F j, Y" }}</td>
                             <td class="py-3">
                                 {% if s.overall_time %}
@@ -199,6 +323,7 @@
     <script>
     let dateSortDirection = 'descending';
     let currentScheduleView = 'table';
+    const overtimeThresholdMinutes = 40 * 60;
 
     document.addEventListener('DOMContentLoaded', () => {
         applyFilters();
@@ -241,11 +366,13 @@
         const exportLink = document.getElementById('export-schedule-pdf');
         const exportUrl = new URL(exportLink.href);
         const startDate = document.getElementById('filter-start-date').value;
+        const endDate = document.getElementById('filter-end-date').value;
         const month = document.getElementById('filter-month').value;
         const status = document.getElementById('filter-status').value;
 
         exportUrl.search = '';
         if (startDate) exportUrl.searchParams.set('start_date', startDate);
+        if (endDate) exportUrl.searchParams.set('end_date', endDate);
         if (month !== 'ALL') exportUrl.searchParams.set('month', month);
         if (status !== 'ALL') exportUrl.searchParams.set('status', status);
         exportUrl.searchParams.set('sort', document.getElementById('date-column').getAttribute('aria-sort'));
@@ -255,6 +382,7 @@
 
     function applyFilters() {
         const startDate = document.getElementById('filter-start-date').value;
+        const endDate = document.getElementById('filter-end-date').value;
         const selectedMonth = document.getElementById('filter-month').value;
         const selectedStatus = document.getElementById('filter-status').value;
 
@@ -267,10 +395,11 @@
             const status = row.getAttribute('data-status');
 
             let matchesStartDate = !startDate || date >= startDate;
+            let matchesEndDate = !endDate || date <= endDate;
             let matchesMonth = (selectedMonth === 'ALL' || month === selectedMonth);
             let matchesStatus = (selectedStatus === 'ALL' || status === selectedStatus);
 
-            if (matchesStartDate && matchesMonth && matchesStatus) {
+            if (matchesStartDate && matchesEndDate && matchesMonth && matchesStatus) {
                 row.style.display = '';
                 visibleCount++;
             } else {
@@ -280,7 +409,122 @@
 
         document.getElementById('visible-count').textContent = visibleCount;
         updateExportLink();
+        renderBiweeklySummary();
         renderCalendar();
+    }
+
+    function renderBiweeklySummary() {
+        const rows = Array.from(document.querySelectorAll('.shift-row'))
+            .filter(row => row.style.display !== 'none');
+        const summaryBody = document.getElementById('biweekly-summary-body');
+        const weekStart = document.getElementById('biweekly-summary').dataset.weekStart;
+        const weekStartsOn = weekStart === 'monday' ? 1 : 0;
+        const weeklyMinutes = new Map();
+        const visibleDates = [];
+        let totalMinutes = 0;
+
+        rows.forEach(row => {
+            const date = parseIsoDate(row.dataset.date);
+            visibleDates.push(row.dataset.date);
+            const weekdayOffset = (date.getUTCDay() - weekStartsOn + 7) % 7;
+            date.setUTCDate(date.getUTCDate() - weekdayOffset);
+            const weekDate = formatIsoDate(
+                date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()
+            );
+            const workedMinutes = row.dataset.workedMinutes !== '' &&
+                row.dataset.workedMinutes != null
+                ? Number(row.dataset.workedMinutes)
+                : Math.max(
+                    0,
+                    Math.round(Number(row.dataset.grossHours) * 60) -
+                    Math.round(Number(row.dataset.breakHours) * 60)
+                );
+            weeklyMinutes.set(weekDate, (weeklyMinutes.get(weekDate) || 0) + workedMinutes);
+            totalMinutes += workedMinutes;
+        });
+
+        document.getElementById('visible-hours-total').textContent =
+            formatHoursMinutes(totalMinutes);
+        if (visibleDates.length) {
+            visibleDates.sort();
+            document.getElementById('summary-visible-range').textContent =
+                `Visible shifts: ${visibleDates[0]} - ${visibleDates[visibleDates.length - 1]}`;
+        } else {
+            document.getElementById('summary-visible-range').textContent =
+                'No shifts match the current filters.';
+        }
+
+        const weekDates = Array.from(weeklyMinutes.keys()).sort();
+        summaryBody.replaceChildren();
+        if (!weekDates.length) {
+            document.getElementById('visible-overtime-total').textContent = '0h 00m';
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            cell.className = 'text-muted';
+            cell.textContent = 'No visible shifts to summarize.';
+            row.appendChild(cell);
+            summaryBody.appendChild(row);
+            return;
+        }
+
+        const anchor = parseIsoDate(weekDates[0]);
+        const periods = new Map();
+        let overtimeTotal = 0;
+        weekDates.forEach(weekDate => {
+            const week = parseIsoDate(weekDate);
+            const weekOffset = Math.floor((week - anchor) / (7 * 24 * 60 * 60 * 1000));
+            const periodIndex = Math.floor(weekOffset / 2);
+            const period = periods.get(periodIndex) || [0, 0];
+            period[weekOffset % 2] += weeklyMinutes.get(weekDate);
+            periods.set(periodIndex, period);
+        });
+
+        Array.from(periods.entries()).sort((a, b) => a[0] - b[0]).forEach(([index, hours]) => {
+            const firstWeek = new Date(anchor);
+            firstWeek.setUTCDate(firstWeek.getUTCDate() + index * 14);
+            const secondWeek = new Date(firstWeek);
+            secondWeek.setUTCDate(secondWeek.getUTCDate() + 7);
+            const firstMinutes = hours[0];
+            const secondMinutes = hours[1];
+            const firstOvertime = Math.max(0, firstMinutes - overtimeThresholdMinutes);
+            const secondOvertime = Math.max(0, secondMinutes - overtimeThresholdMinutes);
+            overtimeTotal += firstOvertime + secondOvertime;
+            const row = document.createElement('tr');
+            [
+                `${formatDate(firstWeek)} - ${formatDate(addDays(secondWeek, 6))}`,
+                formatHoursMinutes(firstMinutes),
+                formatHoursMinutes(firstOvertime),
+                formatHoursMinutes(secondMinutes),
+                formatHoursMinutes(secondOvertime),
+                formatHoursMinutes(firstMinutes + secondMinutes),
+                formatHoursMinutes(firstOvertime + secondOvertime)
+            ].forEach(value => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+            summaryBody.appendChild(row);
+        });
+        document.getElementById('visible-overtime-total').textContent =
+            formatHoursMinutes(overtimeTotal);
+    }
+
+    function addDays(date, days) {
+        const result = new Date(date);
+        result.setUTCDate(result.getUTCDate() + days);
+        return result;
+    }
+
+    function formatDate(date) {
+        return date.toLocaleDateString(undefined, {
+            month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+        });
+    }
+
+    function formatHoursMinutes(minutes) {
+        const wholeMinutes = Math.max(0, Math.round(minutes));
+        return `${Math.floor(wholeMinutes / 60)}h ${String(wholeMinutes % 60).padStart(2, '0')}m`;
     }
 
     function renderCalendar() {
@@ -294,9 +538,13 @@
             return;
         }
 
-        const dates = allRows.map(row => row.dataset.date).sort();
+        if (visibleRows.length === 0) {
+            container.textContent = 'No schedule entries match the current filters.';
+            return;
+        }
+        const dates = visibleRows.map(row => row.dataset.date).sort();
         const startDate = document.getElementById('filter-start-date').value || dates[0];
-        const endDate = dates[dates.length - 1];
+        const endDate = document.getElementById('filter-end-date').value || dates[dates.length - 1];
         if (startDate > endDate) {
             container.textContent = 'No scheduled dates from the selected start date.';
             return;
