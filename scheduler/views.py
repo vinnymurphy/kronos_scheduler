@@ -1,19 +1,22 @@
 import json
 from datetime import datetime, timedelta
+from itertools import pairwise
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from weasyprint import HTML
 
 from .forms import ScheduleUploadForm
-from .models import ShiftEntry
-from .parsers import parse_kronos_schedule
+from .models import ShiftEntry, WorkweekPreference
+from .parsers import minutes_as_hours, parse_kronos_schedule, parse_past_hours
 from .services import import_schedule_json
 
 
@@ -104,6 +107,7 @@ def save_shifts_api(request):
                             "gross_hours": s.get("grossHours", 0),
                             "break_time": s.get("breakTime", ""),
                             "break_hours": s.get("breakHours", 0),
+                            "worked_minutes": None,
                             "segments": s.get("segments", []),
                             "approved": s.get("approved"),
                             "in_progress": s.get("inProgress"),
@@ -134,6 +138,89 @@ def save_shifts_api(request):
 
 @login_required
 def schedule_list_view(request):
+    if request.method == "POST":
+        if request.POST.get("action") == "save_workweek_start":
+            week_start = request.POST.get("week_start")
+            valid_starts = dict(WorkweekPreference.WEEK_START_CHOICES)
+            if week_start not in valid_starts:
+                messages.error(
+                    request, "Choose Sunday or Monday as the workweek start."
+                )
+            else:
+                WorkweekPreference.objects.update_or_create(
+                    user=request.user,
+                    defaults={"week_start": week_start},
+                )
+                messages.success(request, "Workweek start preference saved.")
+                return redirect("schedule_list")
+        elif request.POST.get("action") == "parse_past_hours":
+            raw_hours = request.POST.get("past_hours", "")
+            try:
+                try:
+                    year = int(request.POST.get("year", timezone.localdate().year))
+                except ValueError as error:
+                    raise ValueError("Enter a valid four-digit year.") from error
+                if year < 1 or year > 9999:
+                    raise ValueError("Enter a valid four-digit year.")
+                parsed_shifts = parse_past_hours(raw_hours, default_year=year)
+                with transaction.atomic():
+                    for shift in parsed_shifts:
+                        segments = shift["segments"]
+                        first_segment = segments[0]
+                        last_segment = segments[-1]
+                        gross_minutes = (
+                            last_segment["end_minute"] - first_segment["start_minute"]
+                        )
+                        break_minutes = gross_minutes - shift["total_minutes"]
+                        break_ranges = [
+                            (
+                                previous["end"],
+                                current["start"],
+                                current["start_minute"] - previous["end_minute"],
+                            )
+                            for previous, current in pairwise(segments)
+                        ]
+                        segment_summaries = []
+                        for index, segment in enumerate(segments):
+                            segment_summaries.append(
+                                f"{segment['start']} - {segment['end']} "
+                                f"[{minutes_as_hours(segment['minutes']):.2f}]"
+                            )
+                            if index < len(break_ranges):
+                                break_start, break_end, duration = break_ranges[index]
+                                segment_summaries.append(
+                                    f"{break_start} - {break_end} "
+                                    f"[{minutes_as_hours(duration):.2f}] Break"
+                                )
+                        ShiftEntry.objects.update_or_create(
+                            user=request.user,
+                            date=shift["date"],
+                            defaults={
+                                "is_off": False,
+                                "gross_hours": minutes_as_hours(gross_minutes),
+                                "break_hours": minutes_as_hours(break_minutes),
+                                "worked_minutes": shift["total_minutes"],
+                                "overall_time": "; ".join(
+                                    f"{segment['start']} - {segment['end']}"
+                                    for segment in segments
+                                ),
+                                "break_time": "; ".join(
+                                    f"{start} - {end}" for start, end, _ in break_ranges
+                                ),
+                                "segments": segment_summaries,
+                            },
+                        )
+                messages.success(
+                    request,
+                    f"Saved {len(parsed_shifts)} workday"
+                    f"{'' if len(parsed_shifts) == 1 else 's'} from the pasted hours.",
+                )
+                return redirect("schedule_list")
+            except ValueError as error:
+                messages.error(request, str(error))
+        else:
+            messages.error(request, "Choose a valid schedule action.")
+
     user_shifts = ShiftEntry.objects.filter(user=request.user)
     shifts = get_schedule_shifts(request.user)
     unique_months = {
@@ -149,7 +236,19 @@ def schedule_list_view(request):
     return render(
         request,
         "scheduler/schedule_list.html",
-        {"shifts": shifts, "unique_months": unique_months},
+        {
+            "shifts": shifts,
+            "unique_months": unique_months,
+            "week_start": (
+                WorkweekPreference.objects.filter(user=request.user)
+                .values_list("week_start", flat=True)
+                .first()
+                or WorkweekPreference.SUNDAY
+            ),
+            "current_year": timezone.localdate().year,
+            "past_hours_input": request.POST.get("past_hours", ""),
+            "past_hours_year": request.POST.get("year", timezone.localdate().year),
+        },
     )
 
 
@@ -159,6 +258,12 @@ def schedule_export_pdf_view(request):
     start_date = parse_date(start_date_value) if start_date_value else None
     if start_date_value and start_date is None:
         return HttpResponseBadRequest("Invalid start date. Use YYYY-MM-DD.")
+    end_date_value = request.GET.get("end_date", "")
+    end_date = parse_date(end_date_value) if end_date_value else None
+    if end_date_value and end_date is None:
+        return HttpResponseBadRequest("Invalid end date. Use YYYY-MM-DD.")
+    if start_date and end_date and end_date < start_date:
+        return HttpResponseBadRequest("End date must be on or after start date.")
 
     month = request.GET.get("month", "ALL")
     status = request.GET.get("status", "ALL")
@@ -175,6 +280,8 @@ def schedule_export_pdf_view(request):
     shifts = all_shifts.copy()
     if start_date:
         shifts = [shift for shift in shifts if shift.date >= start_date]
+    if end_date:
+        shifts = [shift for shift in shifts if shift.date <= end_date]
     if month != "ALL":
         shifts = [shift for shift in shifts if shift.date.strftime("%B, %Y") == month]
     if status == "SCHEDULED":
@@ -190,7 +297,7 @@ def schedule_export_pdf_view(request):
         range_start = start_date or min(
             (shift.date for shift in all_shifts), default=None
         )
-        range_end = max((shift.date for shift in all_shifts), default=None)
+        range_end = end_date or max((shift.date for shift in all_shifts), default=None)
         calendar_weeks = build_calendar_weeks(shifts, range_start, range_end)
         template_name = "scheduler/schedule_export_calendar_pdf.html"
         context = {"calendar_weeks": calendar_weeks}

@@ -139,6 +139,11 @@ class ShiftEntry(models.Model):
         decimal_places=2,
         default=Decimal("0.00"),
     )
+    worked_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Exact worked minutes for entries parsed from time ranges.",
+    )
 
     overall_time = models.CharField(max_length=50, blank=True, null=True)
     break_time = models.CharField(max_length=50, blank=True, null=True)
@@ -200,3 +205,26 @@ class ShiftEntry(models.Model):
     def __str__(self):
         status = "Off" if self.is_off else f"{self.gross_hours} hrs"
         return f"{self.date} ({status})"
+
+
+class WorkweekPreference(models.Model):
+    SUNDAY = "sunday"
+    MONDAY = "monday"
+    WEEK_START_CHOICES = (
+        (SUNDAY, "Sunday"),
+        (MONDAY, "Monday"),
+    )
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="workweek_preference",
+    )
+    week_start = models.CharField(
+        max_length=6,
+        choices=WEEK_START_CHOICES,
+        default=SUNDAY,
+    )
+
+    def __str__(self):
+        return f"{self.user}: {dict(self.WEEK_START_CHOICES)[self.week_start]} workweek"

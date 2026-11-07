@@ -1,5 +1,7 @@
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+from itertools import pairwise
 
 MONTH_HEADER = re.compile(r"^([A-Za-z]+,\s*\d{4})$", re.IGNORECASE)
 DATE_HEADER = re.compile(r"^(\d{1,2})\s+([A-Za-z]+)$")
@@ -11,6 +13,16 @@ SHIFT_LINE = re.compile(
 )
 APPROVED_LINE = re.compile(r"^Approved\s*\[\d+\]$", re.IGNORECASE)
 IN_PROGRESS_LINE = re.compile(r"^In Progress\s*\[\d+\]$", re.IGNORECASE)
+PAST_HOURS_LINE = re.compile(
+    r"^(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{4}))?" r"\s+(?P<ranges>.+)$"
+)
+PAST_HOURS_RANGE = re.compile(
+    r"^(?P<start_hour>\d{1,2}):(?P<start_minute>\d{2})\s*"
+    r"(?P<start_period>am|pm)?\s*-\s*"
+    r"(?P<end_hour>\d{1,2}):(?P<end_minute>\d{2})\s*"
+    r"(?P<end_period>am|pm)?$",
+    re.IGNORECASE,
+)
 
 
 def parse_kronos_schedule(raw_text: str) -> dict:
@@ -134,6 +146,123 @@ def parse_kronos_schedule(raw_text: str) -> dict:
         first_label if first_label == last_label else f"{first_label} - {last_label}"
     )
     return {"schedule_period": schedule_period, "shifts": parsed_shifts}
+
+
+def parse_past_hours(raw_text: str, *, default_year: int) -> list[dict]:
+    """Parse dated work intervals, including multiple intervals on one day."""
+    shifts_by_date = {}
+    for line_number, line in enumerate(raw_text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+
+        match = PAST_HOURS_LINE.fullmatch(line)
+        if match is None:
+            raise ValueError(
+                f"Invalid entry on line {line_number}. Use M/D followed by "
+                "one or more time ranges."
+            )
+
+        year = int(match.group("year") or default_year)
+        try:
+            shift_date = date(year, int(match.group("month")), int(match.group("day")))
+        except ValueError as error:
+            raise ValueError(f"Invalid date on line {line_number}: {error}.") from error
+
+        intervals = shifts_by_date.setdefault(
+            shift_date, {"date": shift_date, "segments": [], "total_minutes": 0}
+        )
+        ranges = re.split(
+            r"\s+and\s+|\s*;\s*",
+            match.group("ranges"),
+            flags=re.IGNORECASE,
+        )
+        for time_range in ranges:
+            segment = _parse_past_hours_range(time_range, line_number)
+            intervals["segments"].append(segment)
+            intervals["total_minutes"] += segment["minutes"]
+
+    if not shifts_by_date:
+        raise ValueError("Enter at least one dated work interval.")
+
+    parsed_shifts = []
+    for shift in sorted(shifts_by_date.values(), key=lambda item: item["date"]):
+        segments = sorted(shift["segments"], key=lambda item: item["start_minute"])
+        for previous, current in pairwise(segments):
+            if current["start_minute"] < previous["end_minute"]:
+                raise ValueError(
+                    f"Overlapping work intervals on "
+                    f"{shift['date'].month}/{shift['date'].day}."
+                )
+        shift["segments"] = segments
+        parsed_shifts.append(shift)
+    return parsed_shifts
+
+
+def _parse_past_hours_range(time_range: str, line_number: int) -> dict:
+    match = PAST_HOURS_RANGE.fullmatch(time_range.strip())
+    if match is None:
+        raise ValueError(
+            f"Invalid time range on line {line_number}: {time_range}. "
+            "Use ranges like 9:00 am - 1:30 pm."
+        )
+
+    start_hour = int(match.group("start_hour"))
+    end_hour = int(match.group("end_hour"))
+    start_minute = int(match.group("start_minute"))
+    end_minute = int(match.group("end_minute"))
+    start_period = (match.group("start_period") or "").upper()
+    end_period = (match.group("end_period") or "").upper()
+    if (
+        not 1 <= start_hour <= 12
+        or not 1 <= end_hour <= 12
+        or start_minute > 59
+        or end_minute > 59
+    ):
+        raise ValueError(f"Invalid time on line {line_number}: {time_range}.")
+    if not start_period and not end_period:
+        raise ValueError(
+            f"Specify AM or PM on at least one time in line {line_number}."
+        )
+    if not start_period:
+        start_period = end_period
+        if _minutes_since_midnight(start_hour, start_minute, start_period) >= (
+            _minutes_since_midnight(end_hour, end_minute, end_period)
+        ):
+            start_period = "AM" if end_period == "PM" else "PM"
+    if not end_period:
+        end_period = start_period
+
+    start_total = _minutes_since_midnight(start_hour, start_minute, start_period)
+    end_total = _minutes_since_midnight(end_hour, end_minute, end_period)
+    if end_total <= start_total:
+        raise ValueError(
+            f"End time must be later than start time on line {line_number}: "
+            f"{time_range}."
+        )
+
+    return {
+        "start": _format_past_hours_time(start_hour, start_minute, start_period),
+        "end": _format_past_hours_time(end_hour, end_minute, end_period),
+        "start_minute": start_total,
+        "end_minute": end_total,
+        "minutes": end_total - start_total,
+    }
+
+
+def _minutes_since_midnight(hour: int, minute: int, period: str) -> int:
+    hour_24 = hour % 12 + (12 if period == "PM" else 0)
+    return hour_24 * 60 + minute
+
+
+def _format_past_hours_time(hour: int, minute: int, period: str) -> str:
+    return f"{hour}:{minute:02d} {period}"
+
+
+def minutes_as_hours(minutes: int) -> Decimal:
+    return (Decimal(minutes) / Decimal(60)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
 
 
 def _previous_month_label(month_label: str) -> str:

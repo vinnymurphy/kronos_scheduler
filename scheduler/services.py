@@ -85,9 +85,7 @@ def import_schedule_json(user, json_data_or_string, *, raw_text=None):
         overall_time = (
             f"{segments[0]['start']} - {segments[-1]['end']}" if segments else ""
         )
-        break_time = (
-            f"{breaks[0]['start']} - {breaks[0]['end']}" if breaks else ""
-        )
+        break_time = f"{breaks[0]['start']} - {breaks[0]['end']}" if breaks else ""
         segment_summaries = [
             f"{segment['start']} - {segment['end']} "
             f"[{Decimal(str(segment['hours'])):.2f}]"
@@ -100,6 +98,7 @@ def import_schedule_json(user, json_data_or_string, *, raw_text=None):
                 "is_off": not segments,
                 "gross_hours": Decimal(str(shift_item["total_hours"])),
                 "break_hours": break_hours,
+                "worked_minutes": None,
                 "overall_time": overall_time,
                 "break_time": break_time,
                 "segments": segment_summaries,
