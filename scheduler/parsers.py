@@ -13,6 +13,9 @@ SHIFT_LINE = re.compile(
 )
 APPROVED_LINE = re.compile(r"^Approved\s*\[\d+\]$", re.IGNORECASE)
 IN_PROGRESS_LINE = re.compile(r"^In Progress\s*\[\d+\]$", re.IGNORECASE)
+DATE_ANNOTATION_LINE = re.compile(r"^\.\.\.\s*Dates-\s+.+$", re.IGNORECASE)
+NO_REQUESTS_OFF_LINE = re.compile(r"^No Requests Off Allowed$", re.IGNORECASE)
+OPEN_SHIFT_LINE = re.compile(r"^Open Shift\s*\[\d+\]$", re.IGNORECASE)
 PAST_HOURS_LINE = re.compile(
     r"^(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{4}))?" r"\s+(?P<ranges>.+)$"
 )
@@ -108,6 +111,9 @@ def parse_kronos_schedule(raw_text: str) -> dict:
             line == "-"
             or APPROVED_LINE.fullmatch(line)
             or IN_PROGRESS_LINE.fullmatch(line)
+            or DATE_ANNOTATION_LINE.fullmatch(line)
+            or NO_REQUESTS_OFF_LINE.fullmatch(line)
+            or OPEN_SHIFT_LINE.fullmatch(line)
         ):
             continue
 
