@@ -262,6 +262,66 @@ class KronosTextUploadTests(TestCase):
             "October, 2026 - November, 2026",
         )
 
+    def test_importing_schedule_with_date_annotations_and_open_shifts(self):
+        raw_text = (
+            "November, 2026\n"
+            "27 Friday\n"
+            " ... Dates- Black Friday Weekend\n"
+            "No Requests Off Allowed\n"
+            "12:00 PM - 5:00 PM [5.00]\n"
+            "28 Saturday\n"
+            " ... Dates- Black Friday Weekend\n"
+            "No Requests Off Allowed\n"
+            "12:00 PM - 5:00 PM [5.00]\n"
+            "Open Shift [7]\n"
+            "29 Sunday\n"
+            " ... Dates- Black Friday Weekend\n"
+            "No Requests Off Allowed\n"
+            "10:00 AM - 2:00 PM [4.00]\n"
+            "Open Shift [5]\n"
+            "30 Monday\n"
+            "-\n"
+            "Approved [21]\n"
+            "In Progress [2]\n"
+            "Open Shift [3]\n"
+            "December, 2026\n"
+            "01 Tuesday\n"
+            "-\n"
+            "Approved [33]\n"
+            "In Progress [1]\n"
+            "6:00 AM - 10:00 AM [4.00]\n"
+            "Open Shift [6]\n"
+            "02 Wednesday\n"
+            "-\n"
+            "Approved [32]\n"
+            "In Progress [2]\n"
+            "10:00 AM - 3:00 PM [5.00]\n"
+            "Open Shift [8]\n"
+            "03 Thursday\n"
+        )
+
+        response = self.client.post(
+            reverse("schedule_upload"),
+            {"raw_text": raw_text},
+        )
+
+        self.assertRedirects(response, reverse("schedule_list"))
+        shifts = list(
+            Shift.objects.order_by("date").values_list("date", "total_hours")
+        )
+        self.assertEqual(
+            [(shift_date.isoformat(), float(hours)) for shift_date, hours in shifts],
+            [
+                ("2026-11-27", 5),
+                ("2026-11-28", 5),
+                ("2026-11-29", 4),
+                ("2026-11-30", 0),
+                ("2026-12-01", 4),
+                ("2026-12-02", 5),
+                ("2026-12-03", 0),
+            ],
+        )
+
     def test_invalid_raw_text_is_reported_without_creating_import(self):
         response = self.client.post(
             reverse("schedule_upload"),
